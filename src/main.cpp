@@ -173,12 +173,25 @@ public:
         // Android keeps the overlay alive so the cube launcher remains tappable.
         m_rootPanel->setVisible(false);
 
-        // Cube 459 is the mobile-only launcher. No flame badge or extra artwork.
-        auto cubeSprite = CCSprite::createWithSpriteFrameName("player_459_001.png");
-        if (cubeSprite) {
-            cubeSprite->setScale(1.25f);
+        // Build Cube 459 through Geometry Dash's own icon renderer.
+        // The raw player_459_001.png frame is not guaranteed to be in the
+        // sprite-frame cache on Android until the game has loaded that icon.
+        auto gameManager = GameManager::sharedState();
+        auto cubeIcon = GJItemIcon::create(
+            UnlockType::Cube,
+            459,
+            ccc3(255, 255, 255),
+            ccc3(255, 255, 255),
+            true,
+            false,
+            false,
+            ccc3(255, 255, 255)
+        );
+
+        if (cubeIcon) {
+            cubeIcon->setScale(0.75f);
             auto cubeButton = CCMenuItemSpriteExtra::create(
-                cubeSprite,
+                cubeIcon,
                 this,
                 menu_selector(MythixMenu::onMobileToggle)
             );
@@ -193,10 +206,14 @@ public:
                     screenSize.width - 42.f,
                     screenSize.height - 42.f
                 });
+                log::info("Mythix Android launcher: Cube 459 button created.");
+            }
+            else {
+                log::error("Mythix Android launcher: failed to create the Cube 459 menu button.");
             }
         }
         else {
-            log::error("Mythix Android launcher: Cube 459 sprite frame player_459_001.png was not found.");
+            log::error("Mythix Android launcher: Geometry Dash could not render Cube 459.");
         }
 #endif
         return true;
