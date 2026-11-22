@@ -168,6 +168,34 @@ public:
         m_featuresPanel->addChild(footerMenu);
 
         m_featuresPanel->setVisible(false);
+
+#ifdef GEODE_IS_ANDROID
+        // Android keeps the overlay alive so the cube launcher remains tappable.
+        m_rootPanel->setVisible(false);
+
+        // Cube 459 is the mobile-only launcher. No flame badge or extra artwork.
+        auto cubeSprite = CCSprite::createWithSpriteFrameName("player_460_001.png");
+        if (cubeSprite) {
+            cubeSprite->setScale(1.25f);
+            auto cubeButton = CCMenuItemSpriteExtra::create(
+                cubeSprite,
+                this,
+                menu_selector(MythixMenu::onMobileToggle)
+            );
+
+            if (cubeButton) {
+                auto mobileMenu = CCMenu::create(cubeButton, nullptr);
+                mobileMenu->setPosition({0.f, 0.f});
+                this->addChild(mobileMenu, 10001);
+
+                auto screenSize = CCDirector::sharedDirector()->getWinSize();
+                cubeButton->setPosition({
+                    screenSize.width - 42.f,
+                    screenSize.height - 42.f
+                });
+            }
+        }
+#endif
         return true;
     }
 
@@ -192,11 +220,28 @@ public:
     }
 
     void onClose(CCObject*) {
+#ifdef GEODE_IS_ANDROID
+        if (m_rootPanel)
+            m_rootPanel->setVisible(false);
+#else
         this->setVisible(false);
+#endif
     }
 
+#ifdef GEODE_IS_ANDROID
+    void onMobileToggle(CCObject*) {
+        if (m_rootPanel)
+            m_rootPanel->setVisible(!m_rootPanel->isVisible());
+    }
+#endif
+
     void togglePanel() {
+#ifdef GEODE_IS_ANDROID
+        if (m_rootPanel)
+            m_rootPanel->setVisible(!m_rootPanel->isVisible());
+#else
         this->setVisible(!this->isVisible());
+#endif
     }
 
     CREATE_FUNC(MythixMenu);
@@ -239,7 +284,9 @@ class $modify(MythixPlayLayer, PlayLayer) {
 
         menu->setTag(MYTHIX_MENU_TAG);
         scene->addChild(menu, 10000);
+#ifndef GEODE_IS_ANDROID
         menu->setVisible(false);
+#endif
     }
 
     // Initial noclip implementation: prevent death while enabled.
