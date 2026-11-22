@@ -176,7 +176,6 @@ public:
         // Build Cube 459 through Geometry Dash's own icon renderer.
         // The raw player_459_001.png frame is not guaranteed to be in the
         // sprite-frame cache on Android until the game has loaded that icon.
-        auto gameManager = GameManager::sharedState();
         auto cubeIcon = GJItemIcon::create(
             UnlockType::Cube,
             459,
