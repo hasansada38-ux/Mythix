@@ -1,0 +1,26 @@
+{
+    "geode": "6.0.0-beta.1",
+    "gd": {
+        "win": "2.2081",
+        "android": "2.2081",
+        "mac": "2.2081",
+        "ios": "2.2081"
+    },
+    "id": "mythixgmd.mythix",
+    "name": "Mythix",
+    "version": "v1.0.0",
+    "developer": "MythixGMD",
+    "description": "A customizable Geometry Dash mod menu for MythixGMD.",
+    "dependencies": {
+        "geode.node-ids": ">=v1.23.3"
+    },
+    "settings": {
+        "toggle-menu": {
+            "name": "Toggle Mythix Menu",
+            "description": "Press A to open or close the Mythix menu.",
+            "type": "keybind",
+            "default": "A",
+            "category": "universal"
+        }
+    }
+}
