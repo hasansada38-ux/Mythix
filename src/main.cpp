@@ -196,14 +196,17 @@ public:
             );
 
             if (cubeButton) {
+                // CCMenu is centered on the screen by default. Keep that
+                // default transform and position the item relative to its center.
+                // Setting the menu to (0, 0) while using full-screen item
+                // coordinates shifts the launcher off-screen.
                 auto mobileMenu = CCMenu::create(cubeButton, nullptr);
-                mobileMenu->setPosition({0.f, 0.f});
                 this->addChild(mobileMenu, 10001);
 
                 auto screenSize = CCDirector::sharedDirector()->getWinSize();
                 cubeButton->setPosition({
-                    screenSize.width - 42.f,
-                    screenSize.height - 42.f
+                    screenSize.width / 2.f - 42.f,
+                    screenSize.height / 2.f - 42.f
                 });
                 log::info("Mythix Android launcher: Cube 459 button created.");
             }
