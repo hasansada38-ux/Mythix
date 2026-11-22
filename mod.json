@@ -21,6 +21,13 @@
             "type": "keybind",
             "default": "A",
             "category": "universal"
+        },
+        "noclip": {
+            "name": "Noclip",
+            "description": "Prevents player death while enabled.",
+            "type": "bool",
+            "default": false,
+            "category": "gameplay"
         }
     }
 }
