@@ -11,7 +11,9 @@ namespace {
 
 class MythixMenu : public CCLayer {
 protected:
-    CCLayerColor* m_panel = nullptr;
+    CCLayerColor* m_rootPanel = nullptr;
+    CCLayerColor* m_introPanel = nullptr;
+    CCLayerColor* m_featuresPanel = nullptr;
     CCLabelBMFont* m_noclipLabel = nullptr;
 
     void refreshNoclipLabel() {
@@ -23,6 +25,54 @@ protected:
         m_noclipLabel->setColor(enabled ? ccc3(255, 125, 55) : ccc3(255, 205, 160));
     }
 
+    CCMenuItemLabel* makeButton(
+        const char* text,
+        float x,
+        float y,
+        SEL_MenuHandler callback,
+        float scale = 0.48f
+    ) {
+        auto label = CCLabelBMFont::create(text, "bigFont.fnt");
+        if (!label)
+            return nullptr;
+
+        label->setScale(scale);
+        label->setColor(ccc3(255, 174, 104));
+
+        auto button = CCMenuItemLabel::create(label, this, callback);
+        if (button)
+            button->setPosition({x, y});
+        return button;
+    }
+
+    void addFireHeader(CCLayerColor* panel, const char* subtitle) {
+        auto header = CCLayerColor::create(ccc4(43, 17, 15, 255), 340.f, 54.f);
+        panel->addChild(header);
+
+        auto accent = CCLayerColor::create(ccc4(255, 105, 35, 255), 340.f, 3.f);
+        panel->addChild(accent);
+
+        auto gold = CCLayerColor::create(ccc4(255, 183, 66, 255), 84.f, 2.f);
+        gold->setPosition({128.f, 52.f});
+        panel->addChild(gold);
+
+        auto title = CCLabelBMFont::create("MYTHIX", "bigFont.fnt");
+        if (title) {
+            title->setScale(0.82f);
+            title->setColor(ccc3(255, 139, 55));
+            title->setPosition({170.f, 190.f});
+            panel->addChild(title);
+        }
+
+        auto sub = CCLabelBMFont::create(subtitle, "bigFont.fnt");
+        if (sub) {
+            sub->setScale(0.29f);
+            sub->setColor(ccc3(255, 194, 115));
+            sub->setPosition({170.f, 165.f});
+            panel->addChild(sub);
+        }
+    }
+
 public:
     bool init() override {
         if (!CCLayer::init())
@@ -30,7 +80,6 @@ public:
 
         auto size = CCDirector::sharedDirector()->getWinSize();
 
-        // Main fire-themed panel.
         auto frame = CCLayerColor::create(ccc4(190, 55, 24, 255), 348.f, 228.f);
         if (!frame)
             return false;
@@ -38,50 +87,56 @@ public:
         frame->setPosition({(size.width - 348.f) / 2.f, (size.height - 228.f) / 2.f});
         this->addChild(frame);
 
-        m_panel = CCLayerColor::create(ccc4(17, 10, 12, 250), 340.f, 220.f);
-        if (!m_panel)
+        m_rootPanel = frame;
+
+        m_introPanel = CCLayerColor::create(ccc4(17, 10, 12, 250), 340.f, 220.f);
+        if (!m_introPanel)
             return false;
+        m_introPanel->setPosition({4.f, 4.f});
+        frame->addChild(m_introPanel);
 
-        m_panel->setPosition({4.f, 4.f});
-        frame->addChild(m_panel);
+        addFireHeader(m_introPanel, "F I R E   M O D   M E N U");
 
-        auto header = CCLayerColor::create(ccc4(43, 17, 15, 255), 340.f, 54.f);
-        m_panel->addChild(header);
-
-        auto orangeAccent = CCLayerColor::create(ccc4(255, 105, 35, 255), 340.f, 3.f);
-        m_panel->addChild(orangeAccent);
-
-        auto goldAccent = CCLayerColor::create(ccc4(255, 183, 66, 255), 84.f, 2.f);
-        goldAccent->setPosition({128.f, 52.f});
-        m_panel->addChild(goldAccent);
-
-        auto title = CCLabelBMFont::create("MYTHIX", "bigFont.fnt");
-        if (title) {
-            title->setScale(0.82f);
-            title->setColor(ccc3(255, 139, 55));
-            title->setPosition({170.f, 190.f});
-            m_panel->addChild(title);
+        auto introLine = CCLabelBMFont::create("WELCOME TO MYTHIX", "bigFont.fnt");
+        if (introLine) {
+            introLine->setScale(0.48f);
+            introLine->setColor(ccc3(255, 210, 165));
+            introLine->setPosition({170.f, 112.f});
+            m_introPanel->addChild(introLine);
         }
 
-        auto subtitle = CCLabelBMFont::create("F I R E   M O D   M E N U", "bigFont.fnt");
-        if (subtitle) {
-            subtitle->setScale(0.29f);
-            subtitle->setColor(ccc3(255, 194, 115));
-            subtitle->setPosition({170.f, 165.f});
-            m_panel->addChild(subtitle);
+        auto introMenuButton = makeButton("MOD MENU", 170.f, 72.f, menu_selector(MythixMenu::onOpenFeatures), 0.62f);
+        if (introMenuButton) {
+            auto menu = CCMenu::create(introMenuButton, nullptr);
+            menu->setPosition({0.f, 0.f});
+            m_introPanel->addChild(menu);
         }
+
+        auto introClose = makeButton("CLOSE", 170.f, 27.f, menu_selector(MythixMenu::onClose));
+        if (introClose) {
+            auto menu = CCMenu::create(introClose, nullptr);
+            menu->setPosition({0.f, 0.f});
+            m_introPanel->addChild(menu);
+        }
+
+        m_featuresPanel = CCLayerColor::create(ccc4(17, 10, 12, 250), 340.f, 220.f);
+        if (!m_featuresPanel)
+            return false;
+        m_featuresPanel->setPosition({4.f, 4.f});
+        frame->addChild(m_featuresPanel);
+        addFireHeader(m_featuresPanel, "M Y T H I X   F E A T U R E S");
 
         auto divider = CCLayerColor::create(ccc4(115, 48, 31, 255), 292.f, 1.f);
         divider->setPosition({24.f, 143.f});
-        m_panel->addChild(divider);
+        m_featuresPanel->addChild(divider);
 
-        auto featuresTitle = CCLabelBMFont::create("FEATURES", "bigFont.fnt");
+        auto featuresTitle = CCLabelBMFont::create("GAMEPLAY", "bigFont.fnt");
         if (featuresTitle) {
             featuresTitle->setScale(0.42f);
             featuresTitle->setColor(ccc3(255, 160, 85));
             featuresTitle->setAnchorPoint({0.f, 0.5f});
             featuresTitle->setPosition({28.f, 119.f});
-            m_panel->addChild(featuresTitle);
+            m_featuresPanel->addChild(featuresTitle);
         }
 
         m_noclipLabel = CCLabelBMFont::create("[ ]  NOCLIP", "bigFont.fnt");
@@ -99,56 +154,18 @@ public:
             if (noclipButton) {
                 auto menu = CCMenu::create(noclipButton, nullptr);
                 menu->setPosition({0.f, 0.f});
-                m_panel->addChild(menu);
+                m_featuresPanel->addChild(menu);
             }
         }
         refreshNoclipLabel();
 
-        auto closeLabel = CCLabelBMFont::create("CLOSE", "bigFont.fnt");
-        if (closeLabel) {
-            closeLabel->setScale(0.48f);
-            closeLabel->setColor(ccc3(255, 174, 104));
+        auto backButton = makeButton("BACK", 112.f, 28.f, menu_selector(MythixMenu::onBack));
+        auto closeButton = makeButton("CLOSE", 228.f, 28.f, menu_selector(MythixMenu::onClose));
+        auto footerMenu = CCMenu::create(backButton, closeButton, nullptr);
+        footerMenu->setPosition({0.f, 0.f});
+        m_featuresPanel->addChild(footerMenu);
 
-            auto closeButton = CCMenuItemLabel::create(
-                closeLabel,
-                this,
-                menu_selector(MythixMenu::onClose)
-            );
-
-            if (closeButton) {
-                auto menu = CCMenu::create(closeButton, nullptr);
-                menu->setPosition({0.f, 0.f});
-                closeButton->setPosition({170.f, 28.f});
-                m_panel->addChild(menu);
-            }
-        }
-
-        // Persistent side tab. The panel starts closed; this button opens it.
-        auto tabBackground = CCLayerColor::create(ccc4(105, 35, 20, 245), 104.f, 38.f);
-        tabBackground->setPosition({size.width - 104.f, (size.height - 38.f) / 2.f});
-        this->addChild(tabBackground, 1);
-
-        auto tabLabel = CCLabelBMFont::create("MOD MENU", "bigFont.fnt");
-        if (tabLabel) {
-            tabLabel->setScale(0.38f);
-            tabLabel->setColor(ccc3(255, 190, 115));
-
-            auto tabButton = CCMenuItemLabel::create(
-                tabLabel,
-                this,
-                menu_selector(MythixMenu::onTogglePanel)
-            );
-
-            if (tabButton) {
-                auto tabMenu = CCMenu::create(tabButton, nullptr);
-                tabMenu->setPosition({0.f, 0.f});
-                tabButton->setPosition({size.width - 52.f, size.height / 2.f});
-                this->addChild(tabMenu, 2);
-            }
-        }
-
-        // The side tab remains visible while the main panel is closed.
-        m_panel->getParent()->setVisible(false);
+        m_featuresPanel->setVisible(false);
         return true;
     }
 
@@ -158,18 +175,26 @@ public:
         refreshNoclipLabel();
     }
 
-    void onTogglePanel(CCObject*) {
-        if (m_panel && m_panel->getParent())
-            m_panel->getParent()->setVisible(!m_panel->getParent()->isVisible());
+    void onOpenFeatures(CCObject*) {
+        if (m_introPanel)
+            m_introPanel->setVisible(false);
+        if (m_featuresPanel)
+            m_featuresPanel->setVisible(true);
+    }
+
+    void onBack(CCObject*) {
+        if (m_featuresPanel)
+            m_featuresPanel->setVisible(false);
+        if (m_introPanel)
+            m_introPanel->setVisible(true);
     }
 
     void onClose(CCObject*) {
-        if (m_panel && m_panel->getParent())
-            m_panel->getParent()->setVisible(false);
+        this->setVisible(false);
     }
 
     void togglePanel() {
-        onTogglePanel(nullptr);
+        this->setVisible(!this->isVisible());
     }
 
     CREATE_FUNC(MythixMenu);
@@ -197,7 +222,7 @@ namespace {
     }
 }
 
-// Add the side tab automatically during gameplay.
+// Create the menu overlay during gameplay, but keep it hidden until A is pressed.
 class $modify(MythixPlayLayer, PlayLayer) {
     void onEnter() {
         PlayLayer::onEnter();
@@ -212,9 +237,10 @@ class $modify(MythixPlayLayer, PlayLayer) {
 
         menu->setTag(MYTHIX_MENU_TAG);
         scene->addChild(menu, 10000);
+        menu->setVisible(false);
     }
 
-    // First noclip implementation: prevent death while the option is enabled.
+    // Initial noclip implementation: prevent death while enabled.
     // This does not yet disable every collision response.
     void destroyPlayer(PlayerObject* player, GameObject* object) {
         if (Mod::get()->getSettingValue<bool>("noclip"))
