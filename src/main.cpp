@@ -174,7 +174,7 @@ public:
         m_rootPanel->setVisible(false);
 
         // Cube 459 is the mobile-only launcher. No flame badge or extra artwork.
-        auto cubeSprite = CCSprite::createWithSpriteFrameName("player_460_001.png");
+        auto cubeSprite = CCSprite::createWithSpriteFrameName("player_459.png");
         if (cubeSprite) {
             cubeSprite->setScale(1.25f);
             auto cubeButton = CCMenuItemSpriteExtra::create(
@@ -194,6 +194,9 @@ public:
                     screenSize.height - 42.f
                 });
             }
+        }
+        else {
+            log::error("Mythix Android launcher: Cube 459 sprite frame player_459.png was not found.");
         }
 #endif
         return true;
