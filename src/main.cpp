@@ -141,9 +141,10 @@ public:
 
         m_noclipLabel = CCLabelBMFont::create("[ ]  NOCLIP", "bigFont.fnt");
         if (m_noclipLabel) {
-            m_noclipLabel->setScale(0.48f);
-            m_noclipLabel->setAnchorPoint({0.f, 0.5f});
-            m_noclipLabel->setPosition({38.f, 82.f});
+            // Keep the checkbox label compact; position the menu item itself
+            // because CCMenuItemLabel controls its child label's position.
+            m_noclipLabel->setScale(0.40f);
+            m_noclipLabel->setAnchorPoint({0.5f, 0.5f});
 
             auto noclipButton = CCMenuItemLabel::create(
                 m_noclipLabel,
@@ -152,6 +153,7 @@ public:
             );
 
             if (noclipButton) {
+                noclipButton->setPosition({112.f, 82.f});
                 auto menu = CCMenu::create(noclipButton, nullptr);
                 menu->setPosition({0.f, 0.f});
                 m_featuresPanel->addChild(menu);
