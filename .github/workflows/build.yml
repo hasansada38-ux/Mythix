@@ -7,6 +7,9 @@ on:
       - feature/autonomous-bot-bloodbath
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build Mythix for Windows
@@ -23,6 +26,22 @@ jobs:
           sdk: given
           target: Win64
           build-config: Release
+
+      - name: Publish standalone Windows .geode
+        shell: pwsh
+        env:
+          BUILD_OUTPUT: ${{ steps.build.outputs.build-output }}
+        run: |
+          $package = Join-Path $env:RUNNER_TEMP 'Mythix-Windows.geode'
+          Copy-Item -LiteralPath $env:BUILD_OUTPUT -Destination $package -Force
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch --orphan geode-windows
+          git rm -rf .
+          Copy-Item -LiteralPath $package -Destination 'Mythix-Windows.geode'
+          git add 'Mythix-Windows.geode'
+          git commit -m 'Publish standalone Windows Geode package'
+          git push origin HEAD:geode-windows --force
 
       - name: Upload the .geode package
         uses: actions/upload-artifact@v4
@@ -46,6 +65,20 @@ jobs:
           sdk: given
           target: Android64
           build-config: Release
+
+      - name: Publish standalone Android64 .geode
+        env:
+          BUILD_OUTPUT: ${{ steps.build.outputs.build-output }}
+        run: |
+          cp "$BUILD_OUTPUT" "$RUNNER_TEMP/Mythix-Android64.geode"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch --orphan geode-android64
+          git rm -rf .
+          cp "$RUNNER_TEMP/Mythix-Android64.geode" ./Mythix-Android64.geode
+          git add Mythix-Android64.geode
+          git commit -m 'Publish standalone Android64 Geode package'
+          git push origin HEAD:geode-android64 --force
 
       - name: Upload the Android .geode package
         uses: actions/upload-artifact@v4
