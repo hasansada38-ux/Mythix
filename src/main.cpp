@@ -92,6 +92,8 @@ class $modify(MythixParticleSystem, CCParticleSystemQuad) {
 
 
 class MythixGlobalPanel : public CCLayer {
+    CCLabelBMFont* m_noclipLabel = nullptr;
+    CCLabelBMFont* m_particlesLabel = nullptr;
 public:
     static void toggle() {
         auto scene = CCDirector::sharedDirector()->getRunningScene();
@@ -128,13 +130,13 @@ public:
         auto title = CCLabelBMFont::create("MYTHIX UTILITIES", "bigFont.fnt");
         if (title) { title->setScale(0.62f); title->setColor(ccc3(255,145,65)); title->setPosition({150.f,19.f}); header->addChild(title); }
 
-        auto noclip = makeToggleLabel(Mod::get()->getSettingValue<bool>(NOCLIP_SETTING) ? "[X]  NOCLIP" : "[ ]  NOCLIP");
-        auto particles = makeToggleLabel(Mod::get()->getSettingValue<bool>(NO_PARTICLES_SETTING) ? "[X]  NO PARTICLES" : "[ ]  NO PARTICLES");
+        m_noclipLabel = makeToggleLabel(Mod::get()->getSettingValue<bool>(NOCLIP_SETTING) ? "[X]  NOCLIP" : "[ ]  NOCLIP");
+        m_particlesLabel = makeToggleLabel(Mod::get()->getSettingValue<bool>(NO_PARTICLES_SETTING) ? "[X]  NO PARTICLES" : "[ ]  NO PARTICLES");
         auto menu = CCMenu::create();
         if (!menu) return false;
         menu->setPosition({0.f,0.f});
-        auto n = CCMenuItemLabel::create(noclip, this, menu_selector(MythixGlobalPanel::onNoclip));
-        auto p = CCMenuItemLabel::create(particles, this, menu_selector(MythixGlobalPanel::onParticles));
+        auto n = CCMenuItemLabel::create(m_noclipLabel, this, menu_selector(MythixGlobalPanel::onNoclip));
+        auto p = CCMenuItemLabel::create(m_particlesLabel, this, menu_selector(MythixGlobalPanel::onParticles));
         auto closeText = CCLabelBMFont::create("CLOSE", "bigFont.fnt");
         if (closeText) { closeText->setScale(0.42f); closeText->setColor(ccc3(255,174,104)); }
         auto close = closeText ? CCMenuItemLabel::create(closeText, this, menu_selector(MythixGlobalPanel::onClose)) : nullptr;
@@ -148,14 +150,18 @@ public:
     void onNoclip(CCObject*) {
         bool value = !Mod::get()->getSettingValue<bool>(NOCLIP_SETTING);
         Mod::get()->setSettingValue<bool>(NOCLIP_SETTING, value);
-        toggle();
-        toggle();
+        if (m_noclipLabel) {
+            m_noclipLabel->setString(value ? "[X]  NOCLIP" : "[ ]  NOCLIP");
+            m_noclipLabel->setColor(value ? ccc3(255,125,55) : ccc3(255,205,160));
+        }
     }
     void onParticles(CCObject*) {
         bool value = !Mod::get()->getSettingValue<bool>(NO_PARTICLES_SETTING);
         Mod::get()->setSettingValue<bool>(NO_PARTICLES_SETTING, value);
-        toggle();
-        toggle();
+        if (m_particlesLabel) {
+            m_particlesLabel->setString(value ? "[X]  NO PARTICLES" : "[ ]  NO PARTICLES");
+            m_particlesLabel->setColor(value ? ccc3(255,125,55) : ccc3(255,205,160));
+        }
     }
     void onClose(CCObject*) { this->setVisible(false); }
 };
@@ -292,7 +298,6 @@ class $modify(MythixPauseLayer, PauseLayer) {
         if (m_fields->panel) {
             refreshNoclipLabel();
             refreshParticlesLabel();
-            refreshBotLabel();
             m_fields->panel->setVisible(true);
         }
     }
