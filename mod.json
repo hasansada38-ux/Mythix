@@ -49,6 +49,22 @@
             "type": "keybind",
             "default": "G",
             "category": "gameplay"
+        },
+        "panel-fade-animation": {
+            "name": "Panel Fade Animation",
+            "description": "Fade the Mythix Utilities panel in whenever it opens.",
+            "type": "bool",
+            "default": false,
+            "category": "interface"
+        },
+        "panel-accent-hue": {
+            "name": "Panel Accent Hue",
+            "description": "Hue used by the Mythix Utilities panel accent color slider.",
+            "type": "int",
+            "default": 25,
+            "min": 0,
+            "max": 359,
+            "category": "interface"
         }
     },
     "resources": {
