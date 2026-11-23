@@ -25,21 +25,22 @@ namespace {
             if (!CCNode::init())
                 return false;
 
-            // Keep the entire symbol inside a 32x32 icon canvas, with a
-            // generous inset so it cannot protrude beyond the circular button.
+            // A compact, centered wrench glyph. All strokes stay well inside
+            // the 32x32 canvas; BasedButtonSprite applies an additional fit scale.
             this->setContentSize({32.f, 32.f});
             auto draw = CCDrawNode::create();
             if (!draw)
                 return false;
 
-            auto metal = ccc4f(1.f, 0.88f, 0.72f, 1.f);
-            draw->drawSegment({8.f, 8.f}, {18.5f, 18.5f}, 2.8f, metal);
-            draw->drawDot({8.f, 8.f}, 2.4f, metal);
+            auto metal = ccc4f(1.f, 0.91f, 0.78f, 1.f);
 
-            // Compact open-end wrench head.
-            draw->drawSegment({17.5f, 17.5f}, {23.5f, 24.5f}, 2.8f, metal);
-            draw->drawSegment({20.5f, 17.5f}, {25.f, 22.f}, 2.8f, metal);
-            draw->drawSegment({23.5f, 24.5f}, {25.f, 22.f}, 2.8f, metal);
+            // Rounded handle and end cap.
+            draw->drawSegment({9.5f, 9.5f}, {18.5f, 18.5f}, 2.2f, metal);
+            draw->drawDot({9.5f, 9.5f}, 2.2f, metal);
+
+            // Open jaw at the head of the wrench.
+            draw->drawSegment({17.5f, 17.5f}, {23.5f, 23.5f}, 2.2f, metal);
+            draw->drawSegment({17.5f, 17.5f}, {23.5f, 14.5f}, 2.2f, metal);
 
             this->addChild(draw);
             return true;
@@ -216,6 +217,8 @@ class $modify(MythixPauseLayer, PauseLayer) {
         );
         if (!buttonSprite)
             return;
+        // Explicitly constrain the wrench glyph to the safe inner area of the circle.
+        buttonSprite->setTopRelativeScale(0.45f);
         buttonSprite->setScale(0.6f);
 
         auto button = CCMenuItemSpriteExtra::create(
