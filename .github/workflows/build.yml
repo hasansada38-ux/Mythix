@@ -32,8 +32,10 @@ jobs:
         env:
           BUILD_OUTPUT: ${{ steps.build.outputs.build-output }}
         run: |
+          $built = Get-ChildItem -LiteralPath $env:BUILD_OUTPUT -Filter '*.geode' -File -Recurse | Select-Object -First 1
+          if (-not $built) { throw "No .geode package found under $env:BUILD_OUTPUT" }
           $package = Join-Path $env:RUNNER_TEMP 'Mythix-Windows.geode'
-          Copy-Item -LiteralPath $env:BUILD_OUTPUT -Destination $package -Force
+          Copy-Item -LiteralPath $built.FullName -Destination $package -Force
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch --orphan geode-windows
@@ -43,7 +45,7 @@ jobs:
           git commit -m 'Publish standalone Windows Geode package'
           git push origin HEAD:geode-windows --force
 
-      - name: Upload the .geode package
+      - name: Upload the Windows build
         uses: actions/upload-artifact@v4
         with:
           name: Mythix-Windows
@@ -70,7 +72,9 @@ jobs:
         env:
           BUILD_OUTPUT: ${{ steps.build.outputs.build-output }}
         run: |
-          cp "$BUILD_OUTPUT" "$RUNNER_TEMP/Mythix-Android64.geode"
+          package_path="$(find "$BUILD_OUTPUT" -type f -name '*.geode' -print -quit)"
+          test -n "$package_path" || { echo "No .geode package found under $BUILD_OUTPUT"; exit 1; }
+          cp "$package_path" "$RUNNER_TEMP/Mythix-Android64.geode"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git switch --orphan geode-android64
@@ -80,7 +84,7 @@ jobs:
           git commit -m 'Publish standalone Android64 Geode package'
           git push origin HEAD:geode-android64 --force
 
-      - name: Upload the Android .geode package
+      - name: Upload the Android build
         uses: actions/upload-artifact@v4
         with:
           name: Mythix-Android64
