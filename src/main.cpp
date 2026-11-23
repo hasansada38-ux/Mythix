@@ -434,7 +434,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
         if (m_fields->panel) {
             refreshNoclipLabel();
             refreshParticlesLabel();
-            m_fields->panel->setVisible(true);
+            showPanel(m_fields->panel);
         }
     }
 
