@@ -346,12 +346,20 @@ class $modify(MythixPlayLayer, PlayLayer) {
         if (!m_debugDrawNode)
             return;
 
-        if (Mod::get()->getSettingValue<bool>("show-hitboxes")) {
-            // Reuse Geometry Dash's own debug-hitbox renderer so object
-            // collision shapes, slopes, and special hitboxes stay accurate.
+        // Preserve Geometry Dash's normal practice-mode hitbox setting.
+        bool shouldShow = GameManager::sharedState()->getGameVariable("0166") && m_isPracticeMode;
+
+        // Mythix can additionally show hitboxes during normal gameplay.
+        if (Mod::get()->getSettingValue<bool>("show-hitboxes"))
+            shouldShow = true;
+
+        // Use the game's own debug renderer for accurate object hitboxes.
+        if (shouldShow)
             PlayLayer::updateDebugDraw();
-            m_debugDrawNode->setVisible(true);
-        }
+
+        // Always set visibility so turning the Mythix option off hides its
+        // overlay again, while preserving the game's practice-mode option.
+        m_debugDrawNode->setVisible(shouldShow);
     }
 
     // Initial noclip implementation: prevent death while enabled.
