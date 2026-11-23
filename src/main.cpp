@@ -306,7 +306,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
         auto color = accentColor();
         if (m_fields->noclipLabel) m_fields->noclipLabel->setColor(color);
         if (m_fields->particlesLabel) m_fields->particlesLabel->setColor(color);
-        auto top = m_fields->panel ? m_fields->panel->getChildByTag(0) : nullptr;
+        auto top = m_fields->panel ? m_fields->panel->getChildByTag(770) : nullptr;
         auto title = top ? typeinfo_cast<CCLabelBMFont*>(top->getChildByTag(772)) : nullptr;
         if (title) title->setColor(color);
         auto accent = m_fields->panel ? typeinfo_cast<CCLabelBMFont*>(m_fields->panel->getChildByTag(773)) : nullptr;
@@ -344,6 +344,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
         m_fields->panel = panel;
 
         auto top = CCLayerColor::create(ccc4(72, 27, 19, 255), 340.f, 38.f);
+        top->setTag(770);
         top->setPosition({0.f, 202.f});
         panel->addChild(top);
 
