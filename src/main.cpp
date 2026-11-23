@@ -69,10 +69,44 @@ namespace {
         float right;
     };
 
-    // First autonomous controller: a live, geometry-aware cube controller for
-    // standard-gravity levels with static hazards. It scans the loaded level
-    // once, then uses the game's own player state and native input handler.
-    // It deliberately does not simulate by mutating a second live game world.
+    struct BotOrb {
+        GameObject* object;
+        bool activated;
+    };
+
+    // Geometry Dash object IDs for automatic pads and click-activated orbs.
+    // Keep these separate from lethal hazards: pads activate on contact,
+    // while orbs require a one-frame player input during contact.
+    static bool isBotPad(int id) {
+        switch (id) {
+            case 35:   // Yellow jump pad
+            case 67:   // Blue gravity pad
+            case 140:  // Pink jump pad
+            case 1332: // Red jump pad
+            case 3005: // Spider pad
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    static bool isBotOrb(int id) {
+        switch (id) {
+            case 36:   // Yellow jump orb
+            case 84:   // Blue gravity orb
+            case 141:  // Pink jump orb
+            case 1022: // Green gravity orb
+            case 1330: // Black drop orb
+            case 1333: // Red jump orb
+            case 3004: // Spider orb
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    // First controller revision with explicit pad/orb classification. It uses
+    // live player geometry and native input; it does not mutate a second world.
     class MythixBotController {
     public:
         static bool start(PlayLayer* layer) {
@@ -83,10 +117,24 @@ namespace {
             }
 
             s_hazards.clear();
+            s_orbs.clear();
             for (unsigned int i = 0; i < layer->m_objects->count(); ++i) {
                 auto object = typeinfo_cast<GameObject*>(layer->m_objects->objectAtIndex(i));
-                if (!object || object->m_isDisabled || object->m_objectType != GameObjectType::Hazard)
+                if (!object || object->m_isDisabled)
                     continue;
+
+                int objectID = object->m_objectID;
+                if (isBotPad(objectID))
+                    continue; // Pads are automatic; never jump just because one is nearby.
+
+                if (isBotOrb(objectID)) {
+                    s_orbs.push_back({object, false});
+                    continue;
+                }
+
+                if (object->m_objectType != GameObjectType::Hazard)
+                    continue;
+
                 auto const& rect = object->getObjectRect();
                 s_hazards.push_back({rect.origin.x, rect.origin.x + rect.size.width});
             }
@@ -96,7 +144,8 @@ namespace {
 
             s_enabled = true;
             s_buttonHeld = false;
-            s_status = "Scanned " + std::to_string(s_hazards.size()) + " hazards - running";
+            s_status = "Scanned " + std::to_string(s_hazards.size()) + " hazards, " +
+                std::to_string(s_orbs.size()) + " orbs - running";
             return true;
         }
 
@@ -139,11 +188,39 @@ namespace {
                 return;
             }
 
+            auto const& playerRect = player->getObjectRect();
+            float playerLeft = playerRect.origin.x;
+            float playerRight = playerLeft + playerRect.size.width;
+            float playerBottom = playerRect.origin.y;
+            float playerTop = playerBottom + playerRect.size.height;
+
+            // Orbs are optional and only activate on a click while the player
+            // overlaps their activation area. Check them even while airborne.
+            // Each placed orb is tapped at most once per bot run.
+            for (auto& orb : s_orbs) {
+                if (orb.activated || !orb.object || orb.object->m_isDisabled)
+                    continue;
+
+                auto const& orbRect = orb.object->getObjectRect();
+                bool overlapsOrb =
+                    playerRight >= orbRect.origin.x - 3.f &&
+                    playerLeft <= orbRect.origin.x + orbRect.size.width + 3.f &&
+                    playerTop >= orbRect.origin.y - 3.f &&
+                    playerBottom <= orbRect.origin.y + orbRect.size.height + 3.f;
+
+                if (overlapsOrb) {
+                    layer->handleButton(true, static_cast<int>(PlayerButton::Jump), true);
+                    s_buttonHeld = true;
+                    orb.activated = true;
+                    s_status = "Activated orb " + std::to_string(orb.object->m_objectID);
+                    return;
+                }
+            }
+
+            // Pads activate automatically when touched. The cube jump planner
+            // should only evaluate normal ground jumps when the player is grounded.
             if (!player->m_isOnGround || s_hazards.empty())
                 return;
-
-            auto const& playerRect = player->getObjectRect();
-            float playerRight = playerRect.origin.x + playerRect.size.width;
             BotHazard const* next = nullptr;
             for (auto const& hazard : s_hazards) {
                 if (hazard.right >= playerRight - 12.f) {
@@ -187,6 +264,7 @@ namespace {
         inline static bool s_buttonHeld = false;
         inline static std::string s_status = "Ready - enter a level";
         inline static std::vector<BotHazard> s_hazards;
+        inline static std::vector<BotOrb> s_orbs;
     };
 }
 
