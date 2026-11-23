@@ -268,7 +268,7 @@ namespace {
                 auto airborne = simulate(
                     playerLeft, playerBottom, playerRect.size.width, playerRect.size.height,
                     liveYVelocity, false, -1, stepX, gravity, jumpVelocity,
-                    gravityDirection, 42
+                    gravityDirection, 90
                 );
                 if (airborne.safe) {
                     s_status = "AIRBORNE - landing path clear (" +
@@ -285,7 +285,7 @@ namespace {
             auto coast = simulate(
                 playerLeft, playerBottom, playerRect.size.width, playerRect.size.height,
                 0.f, true, -1, stepX, gravity, jumpVelocity,
-                gravityDirection, 34
+                gravityDirection, 90
             );
 
             if (coast.safe) {
@@ -303,7 +303,7 @@ namespace {
                 auto candidate = simulate(
                     playerLeft, playerBottom, playerRect.size.width, playerRect.size.height,
                     0.f, true, delay, stepX, gravity, jumpVelocity,
-                    gravityDirection, 42
+                    gravityDirection, 60
                 );
                 if (candidate.safe) {
                     bestDelay = delay;
@@ -311,14 +311,22 @@ namespace {
                 }
             }
 
-            // Automatic pads should be allowed to trigger before a normal jump.
-            if (bestDelay >= 0) {
-                for (auto const& pad : s_pads) {
-                    if (pad.left > playerRight + 2.f && pad.left < playerRight + stepX * (bestDelay + 2)) {
-                        s_status = "PAD AHEAD - letting automatic bounce activate";
-                        return;
-                    }
-                }
+            // Never launch a manual jump immediately before a nearby automatic pad.
+            // Only defer when the pad is the next relevant event before the nearest hazard.
+            float nearestHazardX = std::numeric_limits<float>::max();
+            for (auto const& hazard : s_hazards) {
+                if (hazard.right >= playerLeft && hazard.left > playerRight)
+                    nearestHazardX = std::min(nearestHazardX, hazard.left);
+            }
+            float nearestPadX = std::numeric_limits<float>::max();
+            for (auto const& pad : s_pads) {
+                if (pad.right >= playerLeft && pad.left > playerRight)
+                    nearestPadX = std::min(nearestPadX, pad.left);
+            }
+            if (nearestPadX < nearestHazardX &&
+                nearestPadX - playerRight <= stepX * 24.f) {
+                s_status = "PAD APPROACH - waiting for automatic bounce";
+                return;
             }
 
             if (bestDelay == 0) {
@@ -332,7 +340,10 @@ namespace {
                     "f; landing x " + std::to_string(static_cast<int>(bestPrediction.landingX));
             }
             else {
-                s_status = "NO SAFE JUMP FOUND - refusing blind input";
+                s_status = "NO SAFE JUMP - H:" + std::to_string(s_hazards.size()) +
+                    " S:" + std::to_string(s_solids.size()) +
+                    " P:" + std::to_string(s_pads.size()) +
+                    (player->m_isOnGround ? " grounded" : " airborne");
             }
         }
 
