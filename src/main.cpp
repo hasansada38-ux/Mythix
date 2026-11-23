@@ -165,12 +165,12 @@ public:
         auto backdrop = CCLayerColor::create(ccc4(0, 0, 0, 90), win.width, win.height);
         if (backdrop) this->addChild(backdrop);
 
-        auto panel = CCLayerColor::create(ccc4(19, 11, 13, 248), 300.f, 190.f);
+        auto panel = CCLayerColor::create(ccc4(19, 11, 13, 248), 320.f, 250.f);
         if (!panel) return false;
         panel->setPosition({(win.width - 300.f) / 2.f, (win.height - 190.f) / 2.f});
         this->addChild(panel);
 
-        auto header = CCLayerColor::create(ccc4(72, 27, 19, 255), 300.f, 38.f);
+        auto header = CCLayerColor::create(ccc4(72, 27, 19, 255), 320.f, 38.f);
         header->setPosition({0.f, 152.f});
         panel->addChild(header);
         auto title = CCLabelBMFont::create("MYTHIX UTILITIES", "bigFont.fnt");
@@ -256,6 +256,10 @@ class $modify(MythixPauseLayer, PauseLayer) {
         refreshParticlesLabel();
     }
 
+    void onOpenStartPosSettings(CCObject*) {
+        openSettingsPopup(Mod::get());
+    }
+
     void onCloseUtilities(CCObject*) {
         if (m_fields->panel)
             m_fields->panel->setVisible(false);
@@ -279,8 +283,8 @@ class $modify(MythixPauseLayer, PauseLayer) {
             return;
 
         panel->setPosition({
-            (winSize.width - 300.f) / 2.f,
-            (winSize.height - 190.f) / 2.f
+            (winSize.width - 320.f) / 2.f,
+            (winSize.height - 250.f) / 2.f
         });
         panel->setZOrder(10000);
         this->addChild(panel);
@@ -294,12 +298,28 @@ class $modify(MythixPauseLayer, PauseLayer) {
         if (title) {
             title->setScale(0.62f);
             title->setColor(ccc3(255, 145, 65));
-            title->setPosition({150.f, 19.f});
+            title->setPosition({160.f, 19.f});
             top->addChild(title);
         }
 
         m_fields->noclipLabel = makeToggleLabel("[ ]  NOCLIP");
         m_fields->particlesLabel = makeToggleLabel("[ ]  NO PARTICLES");
+
+        auto prevKey = CCLabelBMFont::create("PREVIOUS START POS: F", "bigFont.fnt");
+        auto nextKey = CCLabelBMFont::create("NEXT START POS: G", "bigFont.fnt");
+        auto keyHint = CCLabelBMFont::create("Tap the gear to change keybinds", "chatFont.fnt");
+        if (prevKey) { prevKey->setScale(.38f); prevKey->setColor(ccc3(255,205,160)); prevKey->setPosition({160.f, 45.f}); panel->addChild(prevKey); }
+        if (nextKey) { nextKey->setScale(.38f); nextKey->setColor(ccc3(255,205,160)); nextKey->setPosition({160.f, 28.f}); panel->addChild(nextKey); }
+        if (keyHint) { keyHint->setScale(.34f); keyHint->setColor(ccc3(205,165,135)); keyHint->setPosition({160.f, 12.f}); panel->addChild(keyHint); }
+
+        auto gearSprite = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
+        if (gearSprite) {
+            gearSprite->setScale(.42f);
+            auto gearButton = CCMenuItemSpriteExtra::create(gearSprite, this, menu_selector(MythixPauseLayer::onOpenStartPosSettings));
+            gearButton->setPosition({286.f, 45.f});
+            auto gearMenu = CCMenu::create(gearButton, nullptr);
+            if (gearMenu) { gearMenu->setPosition({0.f,0.f}); panel->addChild(gearMenu, 2); }
+        }
 
         auto noclipButton = CCMenuItemLabel::create(
             m_fields->noclipLabel, this, menu_selector(MythixPauseLayer::onToggleNoclip)
@@ -393,7 +413,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
 class $modify(MythixUILayer, UILayer) {
     bool init(GJBaseGameLayer* baseGame) {
         if (!UILayer::init(baseGame)) return false;
-        if (!PlayLayer::get()) return true;
+        if (!typeinfo_cast<PlayLayer*>(baseGame)) return true;
         auto menu = CCMenu::create();
         if (!menu) return true;
         menu->setID("mythix-startpos-switcher");
@@ -403,7 +423,7 @@ class $modify(MythixUILayer, UILayer) {
 
         auto prevText = CCLabelBMFont::create("<", "bigFont.fnt");
         auto nextText = CCLabelBMFont::create(">", "bigFont.fnt");
-        auto gearText = CCLabelBMFont::create("G", "bigFont.fnt");
+        auto gearSprite = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
         auto count = CCLabelBMFont::create("0/0", "bigFont.fnt");
         auto note = CCLabelBMFont::create("This will be removed when geode 2.2091 comes.", "chatFont.fnt");
         if (prevText) {
@@ -418,9 +438,9 @@ class $modify(MythixUILayer, UILayer) {
             auto item=CCMenuItemSpriteExtra::create(nextText,this,menu_selector(MythixUILayer::onNext));
             item->setPosition({58.f,0.f}); menu->addChild(item);
         }
-        if (gearText) {
-            gearText->setScale(.38f);
-            auto item=CCMenuItemSpriteExtra::create(gearText,this,menu_selector(MythixUILayer::onSettings));
+        if (gearSprite) {
+            gearSprite->setScale(.55f);
+            auto item=CCMenuItemSpriteExtra::create(gearSprite,this,menu_selector(MythixUILayer::onSettings));
             item->setPosition({88.f,0.f}); menu->addChild(item);
         }
         if (note) { note->setScale(.30f); note->setOpacity(180); note->setPosition({0.f,-17.f}); menu->addChild(note); }
