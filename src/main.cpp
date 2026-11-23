@@ -25,17 +25,22 @@ namespace {
             if (!CCNode::init())
                 return false;
 
+            // Keep the entire symbol inside a 32x32 icon canvas, with a
+            // generous inset so it cannot protrude beyond the circular button.
             this->setContentSize({32.f, 32.f});
             auto draw = CCDrawNode::create();
             if (!draw)
                 return false;
 
-            auto white = ccc4f(1.f, 0.88f, 0.72f, 1.f);
-            // Handle and the two open jaws form a simple, recognizable wrench.
-            draw->drawSegment({6.f, 6.f}, {20.f, 20.f}, 3.2f, white);
-            draw->drawSegment({19.f, 19.f}, {27.f, 27.f}, 3.2f, white);
-            draw->drawSegment({22.f, 17.f}, {29.f, 24.f}, 3.2f, white);
-            draw->drawDot({6.f, 6.f}, 3.2f, white);
+            auto metal = ccc4f(1.f, 0.88f, 0.72f, 1.f);
+            draw->drawSegment({8.f, 8.f}, {18.5f, 18.5f}, 2.8f, metal);
+            draw->drawDot({8.f, 8.f}, 2.4f, metal);
+
+            // Compact open-end wrench head.
+            draw->drawSegment({17.5f, 17.5f}, {23.5f, 24.5f}, 2.8f, metal);
+            draw->drawSegment({20.5f, 17.5f}, {25.f, 22.f}, 2.8f, metal);
+            draw->drawSegment({23.5f, 24.5f}, {25.f, 22.f}, 2.8f, metal);
+
             this->addChild(draw);
             return true;
         }
