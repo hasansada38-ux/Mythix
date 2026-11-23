@@ -50,5 +50,10 @@
             "default": "G",
             "category": "gameplay"
         }
+    },
+    "resources": {
+        "sprites": [
+            "resources/mythix-bunny.png"
+        ]
     }
 }
