@@ -34,13 +34,19 @@ namespace {
 
         bool init() override {
             if (!CCNode::init()) return false;
-            this->setContentSize({32.f, 32.f});
-            auto bunny = CCSprite::create("mythix-bunny.png");
-            if (!bunny) return false;
+            this->setContentSize({48.f, 48.f});
+            // The sprite is registered in mod.json and Geode prefixes it with this mod's ID.
+            auto bunny = CCSprite::create("mythix-bunny.png"_spr);
+            if (!bunny) {
+                log::error("Failed to load Mythix bunny sprite resource");
+                return false;
+            }
             auto size = bunny->getContentSize();
-            float fit = std::min(28.f / size.width, 28.f / size.height);
+            if (size.width <= 0.f || size.height <= 0.f) return false;
+            // Leave a generous inset so the bunny stays well inside the circular button.
+            float fit = std::min(36.f / size.width, 36.f / size.height);
             bunny->setScale(fit);
-            bunny->setPosition({16.f, 16.f});
+            bunny->setPosition({24.f, 24.f});
             this->addChild(bunny);
             return true;
         }
