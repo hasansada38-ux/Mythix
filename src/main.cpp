@@ -74,6 +74,11 @@ namespace {
         bool activated;
     };
 
+    struct BotPad {
+        float left;
+        float right;
+    };
+
     // Geometry Dash object IDs for automatic pads and click-activated orbs.
     // Keep these separate from lethal hazards: pads activate on contact,
     // while orbs require a one-frame player input during contact.
@@ -118,14 +123,18 @@ namespace {
 
             s_hazards.clear();
             s_orbs.clear();
+            s_pads.clear();
             for (unsigned int i = 0; i < layer->m_objects->count(); ++i) {
                 auto object = typeinfo_cast<GameObject*>(layer->m_objects->objectAtIndex(i));
                 if (!object || object->m_isDisabled)
                     continue;
 
                 int objectID = object->m_objectID;
-                if (isBotPad(objectID))
-                    continue; // Pads are automatic; never jump just because one is nearby.
+                if (isBotPad(objectID)) {
+                    auto const& rect = object->getObjectRect();
+                    s_pads.push_back({rect.origin.x, rect.origin.x + rect.size.width});
+                    continue; // Pads activate on contact; plan to reach them without jumping over them.
+                }
 
                 if (isBotOrb(objectID)) {
                     s_orbs.push_back({object, false});
@@ -194,19 +203,21 @@ namespace {
             float playerBottom = playerRect.origin.y;
             float playerTop = playerBottom + playerRect.size.height;
 
-            // Orbs are optional and only activate on a click while the player
-            // overlaps their activation area. Check them even while airborne.
-            // Each placed orb is tapped at most once per bot run.
+            // Orbs need a timed jump-button press. Use a small approach margin
+            // around the live player/orb rectangles so a fast-moving player does
+            // not miss the activation window between postUpdate samples.
+            // Check while airborne and before considering another ground jump.
             for (auto& orb : s_orbs) {
                 if (orb.activated || !orb.object || orb.object->m_isDisabled)
                     continue;
 
                 auto const& orbRect = orb.object->getObjectRect();
+                constexpr float ORB_APPROACH_MARGIN = 12.f;
                 bool overlapsOrb =
-                    playerRight >= orbRect.origin.x - 3.f &&
-                    playerLeft <= orbRect.origin.x + orbRect.size.width + 3.f &&
-                    playerTop >= orbRect.origin.y - 3.f &&
-                    playerBottom <= orbRect.origin.y + orbRect.size.height + 3.f;
+                    playerRight >= orbRect.origin.x - ORB_APPROACH_MARGIN &&
+                    playerLeft <= orbRect.origin.x + orbRect.size.width + ORB_APPROACH_MARGIN &&
+                    playerTop >= orbRect.origin.y - ORB_APPROACH_MARGIN &&
+                    playerBottom <= orbRect.origin.y + orbRect.size.height + ORB_APPROACH_MARGIN;
 
                 if (overlapsOrb) {
                     layer->handleButton(true, static_cast<int>(PlayerButton::Jump), true);
@@ -248,9 +259,23 @@ namespace {
                 clusterRight = std::max(clusterRight, hazard.right);
             }
             float clusterWidth = clusterRight - next->left;
+
+            // If an automatic pad is between the player and this hazard, do not
+            // launch early and sail over it. Let the player contact the pad;
+            // its own bounce handles the following section.
+            for (auto const& pad : s_pads) {
+                if (pad.left <= next->left &&
+                    pad.right >= playerRight - 16.f &&
+                    pad.left - playerRight <= 190.f) {
+                    return;
+                }
+            }
+
+            // The previous distance estimate launched far too early on long
+            // clusters. Use a shorter lead that scales gently with speed/width.
             float triggerDistance = std::clamp(
-                speed * 0.27f + std::max(0.f, clusterWidth - 30.f) * 0.35f,
-                65.f, 135.f
+                speed * 0.12f + std::max(0.f, clusterWidth - 30.f) * 0.20f,
+                32.f, 72.f
             );
             float distance = next->left - playerRight;
             if (distance <= triggerDistance && distance >= -20.f) {
@@ -265,6 +290,7 @@ namespace {
         inline static std::string s_status = "Ready - enter a level";
         inline static std::vector<BotHazard> s_hazards;
         inline static std::vector<BotOrb> s_orbs;
+        inline static std::vector<BotPad> s_pads;
     };
 }
 
