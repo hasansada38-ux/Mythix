@@ -1,388 +1,237 @@
 #include <Geode/Geode.hpp>
-#include <Geode/loader/GameEvent.hpp>
-#include <Geode/loader/SettingV3.hpp>
+#include <Geode/modify/PauseLayer.hpp>
 #include <Geode/modify/PlayLayer.hpp>
+#include <Geode/modify/CCParticleSystemQuad.hpp>
 
 using namespace geode::prelude;
 
 namespace {
-    constexpr int MYTHIX_MENU_TAG = 459001;
-}
+    constexpr char const* NOCLIP_SETTING = "noclip";
+    constexpr char const* NO_PARTICLES_SETTING = "no-particles";
 
-class MythixMenu : public CCLayer {
-protected:
-    CCLayerColor* m_rootPanel = nullptr;
-    CCLayerColor* m_introPanel = nullptr;
-    CCLayerColor* m_featuresPanel = nullptr;
-    CCLabelBMFont* m_noclipLabel = nullptr;
-    CCLabelBMFont* m_hitboxesLabel = nullptr;
-
-    void refreshNoclipLabel() {
-        if (!m_noclipLabel)
-            return;
-
-        bool enabled = Mod::get()->getSettingValue<bool>("noclip");
-        m_noclipLabel->setString(enabled ? "[X]  NOCLIP" : "[ ]  NOCLIP");
-        m_noclipLabel->setColor(enabled ? ccc3(255, 125, 55) : ccc3(255, 205, 160));
-    }
-
-    void refreshHitboxesLabel() {
-        if (!m_hitboxesLabel)
-            return;
-
-        bool enabled = Mod::get()->getSettingValue<bool>("show-hitboxes");
-        m_hitboxesLabel->setString(enabled ? "[X]  SHOW HITBOXES" : "[ ]  SHOW HITBOXES");
-        m_hitboxesLabel->setColor(enabled ? ccc3(255, 125, 55) : ccc3(255, 205, 160));
-    }
-
-    CCMenuItemLabel* makeButton(
-        const char* text,
-        float x,
-        float y,
-        SEL_MenuHandler callback,
-        float scale = 0.48f
-    ) {
-        auto label = CCLabelBMFont::create(text, "bigFont.fnt");
-        if (!label)
+    class WrenchIcon : public CCNode {
+    public:
+        static WrenchIcon* create() {
+            auto ret = new WrenchIcon();
+            if (ret && ret->init()) {
+                ret->autorelease();
+                return ret;
+            }
+            CC_SAFE_DELETE(ret);
             return nullptr;
-
-        label->setScale(scale);
-        label->setColor(ccc3(255, 174, 104));
-
-        auto button = CCMenuItemLabel::create(label, this, callback);
-        if (button)
-            button->setPosition({x, y});
-        return button;
-    }
-
-    void addFireHeader(CCLayerColor* panel, const char* subtitle) {
-        auto header = CCLayerColor::create(ccc4(43, 17, 15, 255), 340.f, 54.f);
-        panel->addChild(header);
-
-        auto accent = CCLayerColor::create(ccc4(255, 105, 35, 255), 340.f, 3.f);
-        panel->addChild(accent);
-
-        auto gold = CCLayerColor::create(ccc4(255, 183, 66, 255), 84.f, 2.f);
-        gold->setPosition({128.f, 52.f});
-        panel->addChild(gold);
-
-        auto title = CCLabelBMFont::create("MYTHIX", "bigFont.fnt");
-        if (title) {
-            title->setScale(0.82f);
-            title->setColor(ccc3(255, 139, 55));
-            title->setPosition({170.f, 190.f});
-            panel->addChild(title);
         }
 
-        auto sub = CCLabelBMFont::create(subtitle, "bigFont.fnt");
-        if (sub) {
-            sub->setScale(0.29f);
-            sub->setColor(ccc3(255, 194, 115));
-            sub->setPosition({170.f, 165.f});
-            panel->addChild(sub);
+        bool init() override {
+            if (!CCNode::init())
+                return false;
+
+            this->setContentSize({32.f, 32.f});
+            auto draw = CCDrawNode::create();
+            if (!draw)
+                return false;
+
+            auto white = ccc4f(1.f, 0.88f, 0.72f, 1.f);
+            // Handle and the two open jaws form a simple, recognizable wrench.
+            draw->drawSegment({6.f, 6.f}, {20.f, 20.f}, 3.2f, white);
+            draw->drawSegment({19.f, 19.f}, {27.f, 27.f}, 3.2f, white);
+            draw->drawSegment({22.f, 17.f}, {29.f, 24.f}, 3.2f, white);
+            draw->drawDot({6.f, 6.f}, 3.2f, white);
+            this->addChild(draw);
+            return true;
         }
-    }
+    };
 
-public:
-    bool init() override {
-        if (!CCLayer::init())
-            return false;
-
-        auto size = CCDirector::sharedDirector()->getWinSize();
-
-        auto frame = CCLayerColor::create(ccc4(190, 55, 24, 255), 348.f, 228.f);
-        if (!frame)
-            return false;
-
-        frame->setPosition({(size.width - 348.f) / 2.f, (size.height - 228.f) / 2.f});
-        this->addChild(frame);
-
-        m_rootPanel = frame;
-
-        m_introPanel = CCLayerColor::create(ccc4(17, 10, 12, 250), 340.f, 220.f);
-        if (!m_introPanel)
-            return false;
-        m_introPanel->setPosition({4.f, 4.f});
-        frame->addChild(m_introPanel);
-
-        addFireHeader(m_introPanel, "F I R E   M O D   M E N U");
-
-        auto introLine = CCLabelBMFont::create("WELCOME TO MYTHIX", "bigFont.fnt");
-        if (introLine) {
-            introLine->setScale(0.48f);
-            introLine->setColor(ccc3(255, 210, 165));
-            introLine->setPosition({170.f, 112.f});
-            m_introPanel->addChild(introLine);
+    CCLabelBMFont* makeToggleLabel(const char* text) {
+        auto label = CCLabelBMFont::create(text, "bigFont.fnt");
+        if (label) {
+            label->setScale(0.48f);
+            label->setColor(ccc3(255, 205, 160));
         }
-
-        auto introMenuButton = makeButton("MOD MENU", 170.f, 72.f, menu_selector(MythixMenu::onOpenFeatures), 0.62f);
-        if (introMenuButton) {
-            auto menu = CCMenu::create(introMenuButton, nullptr);
-            menu->setPosition({0.f, 0.f});
-            m_introPanel->addChild(menu);
-        }
-
-        auto introClose = makeButton("CLOSE", 170.f, 27.f, menu_selector(MythixMenu::onClose));
-        if (introClose) {
-            auto menu = CCMenu::create(introClose, nullptr);
-            menu->setPosition({0.f, 0.f});
-            m_introPanel->addChild(menu);
-        }
-
-        m_featuresPanel = CCLayerColor::create(ccc4(17, 10, 12, 250), 340.f, 220.f);
-        if (!m_featuresPanel)
-            return false;
-        m_featuresPanel->setPosition({4.f, 4.f});
-        frame->addChild(m_featuresPanel);
-        addFireHeader(m_featuresPanel, "M Y T H I X   F E A T U R E S");
-
-        auto divider = CCLayerColor::create(ccc4(115, 48, 31, 255), 292.f, 1.f);
-        divider->setPosition({24.f, 143.f});
-        m_featuresPanel->addChild(divider);
-
-        auto featuresTitle = CCLabelBMFont::create("GAMEPLAY", "bigFont.fnt");
-        if (featuresTitle) {
-            featuresTitle->setScale(0.42f);
-            featuresTitle->setColor(ccc3(255, 160, 85));
-            featuresTitle->setAnchorPoint({0.f, 0.5f});
-            featuresTitle->setPosition({28.f, 119.f});
-            m_featuresPanel->addChild(featuresTitle);
-        }
-
-        m_noclipLabel = CCLabelBMFont::create("[ ]  NOCLIP", "bigFont.fnt");
-        if (m_noclipLabel) {
-            m_noclipLabel->setScale(0.40f);
-            m_noclipLabel->setAnchorPoint({0.5f, 0.5f});
-
-            auto noclipButton = CCMenuItemLabel::create(
-                m_noclipLabel,
-                this,
-                menu_selector(MythixMenu::onToggleNoclip)
-            );
-
-            if (noclipButton) {
-                noclipButton->setPosition({112.f, 88.f});
-                auto menu = CCMenu::create(noclipButton, nullptr);
-                menu->setPosition({0.f, 0.f});
-                m_featuresPanel->addChild(menu);
-            }
-        }
-        refreshNoclipLabel();
-
-        m_hitboxesLabel = CCLabelBMFont::create("[ ]  SHOW HITBOXES", "bigFont.fnt");
-        if (m_hitboxesLabel) {
-            m_hitboxesLabel->setScale(0.32f);
-            m_hitboxesLabel->setAnchorPoint({0.5f, 0.5f});
-
-            auto hitboxesButton = CCMenuItemLabel::create(
-                m_hitboxesLabel,
-                this,
-                menu_selector(MythixMenu::onToggleHitboxes)
-            );
-
-            if (hitboxesButton) {
-                hitboxesButton->setPosition({170.f, 57.f});
-                auto menu = CCMenu::create(hitboxesButton, nullptr);
-                menu->setPosition({0.f, 0.f});
-                m_featuresPanel->addChild(menu);
-            }
-        }
-        refreshHitboxesLabel();
-
-        auto backButton = makeButton("BACK", 112.f, 28.f, menu_selector(MythixMenu::onBack));
-        auto closeButton = makeButton("CLOSE", 228.f, 28.f, menu_selector(MythixMenu::onClose));
-        auto footerMenu = CCMenu::create(backButton, closeButton, nullptr);
-        footerMenu->setPosition({0.f, 0.f});
-        m_featuresPanel->addChild(footerMenu);
-
-        m_featuresPanel->setVisible(false);
-
-#ifdef GEODE_IS_ANDROID
-        // Android keeps the overlay alive so the cube launcher remains tappable.
-        m_rootPanel->setVisible(false);
-
-        // Build Cube 459 through Geometry Dash's own icon renderer.
-        auto cubeIcon = GJItemIcon::create(
-            UnlockType::Cube,
-            459,
-            ccc3(255, 255, 255),
-            ccc3(255, 255, 255),
-            true,
-            false,
-            false,
-            ccc3(255, 255, 255)
-        );
-
-        if (cubeIcon) {
-            cubeIcon->setScale(0.75f);
-            auto cubeButton = CCMenuItemSpriteExtra::create(
-                cubeIcon,
-                this,
-                menu_selector(MythixMenu::onMobileToggle)
-            );
-
-            if (cubeButton) {
-                auto mobileMenu = CCMenu::create(cubeButton, nullptr);
-                this->addChild(mobileMenu, 10001);
-
-                auto screenSize = CCDirector::sharedDirector()->getWinSize();
-                cubeButton->setPosition({
-                    screenSize.width / 2.f - 42.f,
-                    screenSize.height / 2.f - 42.f
-                });
-                log::info("Mythix Android launcher: Cube 459 button created.");
-            }
-            else {
-                log::error("Mythix Android launcher: failed to create the Cube 459 menu button.");
-            }
-        }
-        else {
-            log::error("Mythix Android launcher: Geometry Dash could not render Cube 459.");
-        }
-#endif
-        return true;
-    }
-
-    void onToggleNoclip(CCObject*) {
-        bool enabled = !Mod::get()->getSettingValue<bool>("noclip");
-        Mod::get()->setSettingValue<bool>("noclip", enabled);
-        refreshNoclipLabel();
-    }
-
-    void onToggleHitboxes(CCObject*) {
-        bool enabled = !Mod::get()->getSettingValue<bool>("show-hitboxes");
-        Mod::get()->setSettingValue<bool>("show-hitboxes", enabled);
-        refreshHitboxesLabel();
-
-    }
-
-    void onOpenFeatures(CCObject*) {
-        if (m_introPanel)
-            m_introPanel->setVisible(false);
-        if (m_featuresPanel)
-            m_featuresPanel->setVisible(true);
-    }
-
-    void onBack(CCObject*) {
-        if (m_featuresPanel)
-            m_featuresPanel->setVisible(false);
-        if (m_introPanel)
-            m_introPanel->setVisible(true);
-    }
-
-    void onClose(CCObject*) {
-#ifdef GEODE_IS_ANDROID
-        if (m_rootPanel)
-            m_rootPanel->setVisible(false);
-#else
-        this->setVisible(false);
-#endif
-    }
-
-#ifdef GEODE_IS_ANDROID
-    void onMobileToggle(CCObject*) {
-        if (m_rootPanel)
-            m_rootPanel->setVisible(!m_rootPanel->isVisible());
-    }
-#endif
-
-    void togglePanel() {
-#ifdef GEODE_IS_ANDROID
-        if (m_rootPanel)
-            m_rootPanel->setVisible(!m_rootPanel->isVisible());
-#else
-        this->setVisible(!this->isVisible());
-#endif
-    }
-
-    CREATE_FUNC(MythixMenu);
-};
-
-namespace {
-    void toggleMythixMenu() {
-        auto scene = CCDirector::sharedDirector()->getRunningScene();
-        if (!scene)
-            return;
-
-        auto existing = typeinfo_cast<MythixMenu*>(scene->getChildByTag(MYTHIX_MENU_TAG));
-        if (existing) {
-            existing->togglePanel();
-            return;
-        }
-
-        auto menu = MythixMenu::create();
-        if (!menu)
-            return;
-
-        menu->setTag(MYTHIX_MENU_TAG);
-        scene->addChild(menu, 10000);
-        menu->togglePanel();
+        return label;
     }
 }
 
-// Create the menu overlay during gameplay, but keep it hidden until A is pressed.
 class $modify(MythixPlayLayer, PlayLayer) {
-    static void onModify(auto& self) {
-        // Run after other visibility hooks so they cannot immediately hide the hitbox overlay.
-        (void)self.setHookPriority("PlayLayer::updateVisibility", -6969);
-    }
-
-    void onEnter() {
-        PlayLayer::onEnter();
-
-        auto scene = CCDirector::sharedDirector()->getRunningScene();
-        if (!scene || scene->getChildByTag(MYTHIX_MENU_TAG))
-            return;
-
-        auto menu = MythixMenu::create();
-        if (!menu)
-            return;
-
-        menu->setTag(MYTHIX_MENU_TAG);
-        scene->addChild(menu, 10000);
-#ifndef GEODE_IS_ANDROID
-        menu->setVisible(false);
-#endif
-    }
-
-    void updateVisibility(float dt) {
-        PlayLayer::updateVisibility(dt);
-
-        if (!m_debugDrawNode)
-            return;
-
-        // Preserve Geometry Dash's normal practice-mode hitbox setting.
-        bool shouldShow = GameManager::sharedState()->getGameVariable("0166") && m_isPracticeMode;
-
-        // Mythix can additionally show hitboxes during normal gameplay.
-        if (Mod::get()->getSettingValue<bool>("show-hitboxes"))
-            shouldShow = true;
-
-        // Use the game's own debug renderer for accurate object hitboxes.
-        if (shouldShow)
-            PlayLayer::updateDebugDraw();
-
-        // Always set visibility so turning the Mythix option off hides its
-        // overlay again, while preserving the game's practice-mode option.
-        m_debugDrawNode->setVisible(shouldShow);
-    }
-
-    // Initial noclip implementation: prevent death while enabled.
-    // This does not yet disable every collision response.
+    // Preserve the existing Mythix noclip behavior.
     void destroyPlayer(PlayerObject* player, GameObject* object) {
-        if (Mod::get()->getSettingValue<bool>("noclip"))
+        if (Mod::get()->getSettingValue<bool>(NOCLIP_SETTING))
             return;
 
         PlayLayer::destroyPlayer(player, object);
     }
 };
 
-$on_game(Loaded) {
-    listenForKeybindSettingPresses(
-        "toggle-menu",
-        [](Keybind const&, bool down, bool repeat, double) {
-            if (down && !repeat)
-                toggleMythixMenu();
+// Suppress Cocos particle-system rendering while a level is active.
+// This catches particle systems created by level objects and player effects.
+class $modify(MythixParticleSystem, CCParticleSystemQuad) {
+    void draw() {
+        if (PlayLayer::get() && Mod::get()->getSettingValue<bool>(NO_PARTICLES_SETTING))
+            return;
+
+        CCParticleSystemQuad::draw();
+    }
+};
+
+class $modify(MythixPauseLayer, PauseLayer) {
+    struct Fields {
+        CCLayerColor* panel = nullptr;
+        CCLabelBMFont* noclipLabel = nullptr;
+        CCLabelBMFont* particlesLabel = nullptr;
+    };
+
+    void refreshNoclipLabel() {
+        if (!m_fields->noclipLabel)
+            return;
+        bool enabled = Mod::get()->getSettingValue<bool>(NOCLIP_SETTING);
+        m_fields->noclipLabel->setString(enabled ? "[X]  NOCLIP" : "[ ]  NOCLIP");
+        m_fields->noclipLabel->setColor(enabled ? ccc3(255, 125, 55) : ccc3(255, 205, 160));
+    }
+
+    void refreshParticlesLabel() {
+        if (!m_fields->particlesLabel)
+            return;
+        bool enabled = Mod::get()->getSettingValue<bool>(NO_PARTICLES_SETTING);
+        m_fields->particlesLabel->setString(enabled ? "[X]  NO PARTICLES" : "[ ]  NO PARTICLES");
+        m_fields->particlesLabel->setColor(enabled ? ccc3(255, 125, 55) : ccc3(255, 205, 160));
+    }
+
+    void onToggleNoclip(CCObject*) {
+        bool enabled = !Mod::get()->getSettingValue<bool>(NOCLIP_SETTING);
+        Mod::get()->setSettingValue<bool>(NOCLIP_SETTING, enabled);
+        refreshNoclipLabel();
+    }
+
+    void onToggleParticles(CCObject*) {
+        bool enabled = !Mod::get()->getSettingValue<bool>(NO_PARTICLES_SETTING);
+        Mod::get()->setSettingValue<bool>(NO_PARTICLES_SETTING, enabled);
+        refreshParticlesLabel();
+    }
+
+    void onCloseUtilities(CCObject*) {
+        if (m_fields->panel)
+            m_fields->panel->setVisible(false);
+    }
+
+    void onOpenUtilities(CCObject*) {
+        if (m_fields->panel) {
+            refreshNoclipLabel();
+            refreshParticlesLabel();
+            m_fields->panel->setVisible(true);
         }
-    );
-}
+    }
+
+    void createUtilitiesPanel() {
+        if (m_fields->panel)
+            return;
+
+        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        auto panel = CCLayerColor::create(ccc4(19, 11, 13, 248), 300.f, 174.f);
+        if (!panel)
+            return;
+
+        panel->setPosition({
+            (winSize.width - 300.f) / 2.f,
+            (winSize.height - 174.f) / 2.f
+        });
+        panel->setZOrder(10000);
+        this->addChild(panel);
+        m_fields->panel = panel;
+
+        auto top = CCLayerColor::create(ccc4(72, 27, 19, 255), 300.f, 38.f);
+        panel->addChild(top);
+
+        auto title = CCLabelBMFont::create("MYTHIX UTILITIES", "bigFont.fnt");
+        if (title) {
+            title->setScale(0.62f);
+            title->setColor(ccc3(255, 145, 65));
+            title->setPosition({150.f, 19.f});
+            top->addChild(title);
+        }
+
+        m_fields->noclipLabel = makeToggleLabel("[ ]  NOCLIP");
+        m_fields->particlesLabel = makeToggleLabel("[ ]  NO PARTICLES");
+
+        auto noclipButton = CCMenuItemLabel::create(
+            m_fields->noclipLabel, this, menu_selector(MythixPauseLayer::onToggleNoclip)
+        );
+        auto particlesButton = CCMenuItemLabel::create(
+            m_fields->particlesLabel, this, menu_selector(MythixPauseLayer::onToggleParticles)
+        );
+
+        if (noclipButton)
+            noclipButton->setPosition({150.f, 104.f});
+        if (particlesButton)
+            particlesButton->setPosition({150.f, 66.f});
+
+        auto closeLabel = CCLabelBMFont::create("CLOSE", "bigFont.fnt");
+        if (closeLabel) {
+            closeLabel->setScale(0.42f);
+            closeLabel->setColor(ccc3(255, 174, 104));
+        }
+        auto closeButton = closeLabel
+            ? CCMenuItemLabel::create(closeLabel, this, menu_selector(MythixPauseLayer::onCloseUtilities))
+            : nullptr;
+        if (closeButton)
+            closeButton->setPosition({150.f, 24.f});
+
+        auto menu = CCMenu::create();
+        if (menu) {
+            menu->setPosition({0.f, 0.f});
+            if (noclipButton) menu->addChild(noclipButton);
+            if (particlesButton) menu->addChild(particlesButton);
+            if (closeButton) menu->addChild(closeButton);
+            panel->addChild(menu);
+        }
+
+        refreshNoclipLabel();
+        refreshParticlesLabel();
+        panel->setVisible(false);
+    }
+
+    void onMythixUtilities(CCObject*) {
+        createUtilitiesPanel();
+        if (m_fields->panel) {
+            refreshNoclipLabel();
+            refreshParticlesLabel();
+            m_fields->panel->setVisible(true);
+        }
+    }
+
+    void customSetup() {
+        PauseLayer::customSetup();
+
+        createUtilitiesPanel();
+
+        auto icon = WrenchIcon::create();
+        if (!icon)
+            return;
+
+        auto buttonSprite = CircleButtonSprite::create(
+            icon, CircleBaseColor::Green, CircleBaseSize::MediumAlt
+        );
+        if (!buttonSprite)
+            return;
+        buttonSprite->setScale(0.6f);
+
+        auto button = CCMenuItemSpriteExtra::create(
+            buttonSprite, this, menu_selector(MythixPauseLayer::onMythixUtilities)
+        );
+        if (!button)
+            return;
+        button->setID("mythix-utilities-button");
+
+        if (auto menu = this->getChildByID("right-button-menu")) {
+            menu->addChild(button);
+            menu->updateLayout();
+        }
+        else {
+            // Fallback for layouts where the game's right-side menu ID is unavailable.
+            auto menu = CCMenu::create(button, nullptr);
+            if (!menu)
+                return;
+            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            menu->setPosition({winSize.width - 38.f, winSize.height - 42.f});
+            this->addChild(menu, 10001);
+        }
+    }
+};
