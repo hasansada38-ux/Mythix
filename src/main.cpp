@@ -226,12 +226,12 @@ class $modify(MythixPauseLayer, PauseLayer) {
         }
         else {
             // Fallback for layouts where the game's right-side menu ID is unavailable.
-            auto menu = CCMenu::create(button, nullptr);
-            if (!menu)
+            auto fallbackMenu = CCMenu::create(button, nullptr);
+            if (!fallbackMenu)
                 return;
             auto winSize = CCDirector::sharedDirector()->getWinSize();
-            menu->setPosition({winSize.width - 38.f, winSize.height - 42.f});
-            this->addChild(menu, 10001);
+            fallbackMenu->setPosition({winSize.width - 38.f, winSize.height - 42.f});
+            this->addChild(fallbackMenu, 10001);
         }
     }
 };
