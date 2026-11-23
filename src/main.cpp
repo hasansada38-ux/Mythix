@@ -254,11 +254,6 @@ public:
         Mod::get()->setSettingValue<bool>("show-hitboxes", enabled);
         refreshHitboxesLabel();
 
-        // Refresh immediately so the hitboxes appear/disappear without
-        // requiring the player to restart the level.
-        if (auto playLayer = PlayLayer::get()) {
-            playLayer->updateVisibility(0.f);
-        }
     }
 
     void onOpenFeatures(CCObject*) {
@@ -301,7 +296,7 @@ public:
     }
 
     CREATE_FUNC(MythixMenu);
-}
+};
 
 namespace {
     void toggleMythixMenu() {
