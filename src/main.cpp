@@ -171,7 +171,7 @@ public:
 
         m_hitboxesLabel = CCLabelBMFont::create("[ ]  SHOW HITBOXES", "bigFont.fnt");
         if (m_hitboxesLabel) {
-            m_hitboxesLabel->setScale(0.40f);
+            m_hitboxesLabel->setScale(0.32f);
             m_hitboxesLabel->setAnchorPoint({0.5f, 0.5f});
 
             auto hitboxesButton = CCMenuItemLabel::create(
@@ -181,7 +181,7 @@ public:
             );
 
             if (hitboxesButton) {
-                hitboxesButton->setPosition({142.f, 57.f});
+                hitboxesButton->setPosition({170.f, 57.f});
                 auto menu = CCMenu::create(hitboxesButton, nullptr);
                 menu->setPosition({0.f, 0.f});
                 m_featuresPanel->addChild(menu);
@@ -322,6 +322,11 @@ namespace {
 
 // Create the menu overlay during gameplay, but keep it hidden until A is pressed.
 class $modify(MythixPlayLayer, PlayLayer) {
+    static void onModify(auto& self) {
+        // Run after other visibility hooks so they cannot immediately hide the hitbox overlay.
+        (void)self.setHookPriority("PlayLayer::updateVisibility", -6969);
+    }
+
     void onEnter() {
         PlayLayer::onEnter();
 
