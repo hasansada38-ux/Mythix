@@ -94,6 +94,14 @@ class $modify(MythixPlayLayer, PlayLayer) {
             if (it != m_fields->startPositions.end())
                 m_fields->selectedStartPos = static_cast<int>(it - m_fields->startPositions.begin()) + 1;
         }
+        if (m_uiLayer) {
+            auto switcher = m_uiLayer->getChildByID("mythix-startpos-switcher");
+            auto label = switcher ? typeinfo_cast<CCLabelBMFont*>(switcher->getChildByID("mythix-startpos-count")) : nullptr;
+            if (label)
+                label->setString(fmt::format("{}/{}", m_fields->selectedStartPos, m_fields->startPositions.size()).c_str());
+            if (switcher)
+                switcher->setVisible(!m_fields->startPositions.empty());
+        }
     }
 
     void switchStartPos(int direction) {
@@ -109,6 +117,14 @@ class $modify(MythixPlayLayer, PlayLayer) {
         if (m_isPracticeMode) resetLevelFromStart();
         resetLevel();
         startMusic();
+
+        // Keep the on-screen counter synchronized after keyboard and touch input.
+        if (m_uiLayer) {
+            auto switcher = m_uiLayer->getChildByID("mythix-startpos-switcher");
+            auto label = switcher ? typeinfo_cast<CCLabelBMFont*>(switcher->getChildByID("mythix-startpos-count")) : nullptr;
+            if (label)
+                label->setString(fmt::format("{}/{}", m_fields->selectedStartPos, m_fields->startPositions.size()).c_str());
+        }
     }
 
     // Preserve the existing Mythix noclip behavior.
@@ -305,9 +321,9 @@ class $modify(MythixPauseLayer, PauseLayer) {
         m_fields->noclipLabel = makeToggleLabel("[ ]  NOCLIP");
         m_fields->particlesLabel = makeToggleLabel("[ ]  NO PARTICLES");
 
-        auto prevKey = CCLabelBMFont::create("PREVIOUS START POS: F", "bigFont.fnt");
-        auto nextKey = CCLabelBMFont::create("NEXT START POS: G", "bigFont.fnt");
-        auto keyHint = CCLabelBMFont::create("Tap the gear to change keybinds", "chatFont.fnt");
+        auto prevKey = CCLabelBMFont::create("START POS KEYBINDS", "bigFont.fnt");
+        auto nextKey = CCLabelBMFont::create("Previous: F     Next: G (defaults)", "bigFont.fnt");
+        auto keyHint = CCLabelBMFont::create("Use the gear to customize both keys", "chatFont.fnt");
         if (prevKey) { prevKey->setScale(.38f); prevKey->setColor(ccc3(255,205,160)); prevKey->setPosition({160.f, 45.f}); panel->addChild(prevKey); }
         if (nextKey) { nextKey->setScale(.38f); nextKey->setColor(ccc3(255,205,160)); nextKey->setPosition({160.f, 28.f}); panel->addChild(nextKey); }
         if (keyHint) { keyHint->setScale(.34f); keyHint->setColor(ccc3(205,165,135)); keyHint->setPosition({160.f, 12.f}); panel->addChild(keyHint); }
