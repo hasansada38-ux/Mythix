@@ -6,6 +6,7 @@
 #include <Geode/modify/UILayer.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/binding/StartPosObject.hpp>
+#include <Geode/cocos/extensions/GUI/CCControlExtension/CCControlSlider.h>
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -19,6 +20,27 @@ namespace {
     constexpr char const* PANEL_KEYBIND_SETTING = "panel-keybind";
     constexpr char const* STARTPOS_PREV_KEYBIND = "startpos-prev-keybind";
     constexpr char const* STARTPOS_NEXT_KEYBIND = "startpos-next-keybind";
+    constexpr char const* PANEL_FADE_SETTING = "panel-fade-animation";
+    constexpr char const* PANEL_ACCENT_HUE_SETTING = "panel-accent-hue";
+
+    ccColor3B accentColor() {
+        int hue = (Mod::get()->getSettingValue<int>(PANEL_ACCENT_HUE_SETTING) % 360 + 360) % 360;
+        float h = hue / 60.f, x = 1.f - std::abs(std::fmod(h, 2.f) - 1.f);
+        float r=0.f, g=0.f, b=0.f;
+        if (h < 1.f) { r=1.f; g=x; } else if (h < 2.f) { r=x; g=1.f; }
+        else if (h < 3.f) { g=1.f; b=x; } else if (h < 4.f) { g=x; b=1.f; }
+        else if (h < 5.f) { r=x; b=1.f; } else { r=1.f; b=x; }
+        return ccc3(static_cast<GLubyte>(r*255), static_cast<GLubyte>(g*255), static_cast<GLubyte>(b*255));
+    }
+
+    void showPanel(CCNode* node) {
+        if (!node) return;
+        node->stopAllActions(); node->setVisible(true);
+        if (Mod::get()->getSettingValue<bool>(PANEL_FADE_SETTING)) {
+            node->setCascadeOpacityEnabled(true); node->setOpacity(0);
+            node->runAction(CCFadeTo::create(.24f, 255));
+        } else node->setOpacity(255);
+    }
 
     class BunnyIcon : public CCNode {
     public:
@@ -56,7 +78,7 @@ namespace {
         auto label = CCLabelBMFont::create(text, "bigFont.fnt");
         if (label) {
             label->setScale(0.48f);
-            label->setColor(ccc3(255, 205, 160));
+            label->setColor(accentColor());
         }
         return label;
     }
@@ -156,7 +178,7 @@ public:
         if (!scene) return;
         auto existing = scene->getChildByID("mythix-global-panel");
         if (existing) {
-            existing->setVisible(!existing->isVisible());
+            if (existing->isVisible()) existing->setVisible(false); else showPanel(existing);
             return;
         }
         auto panel = new MythixGlobalPanel();
@@ -164,6 +186,7 @@ public:
             panel->setID("mythix-global-panel");
             scene->addChild(panel, 100000);
             panel->autorelease();
+            showPanel(panel);
         } else {
             CC_SAFE_DELETE(panel);
         }
@@ -184,7 +207,7 @@ public:
         header->setPosition({0.f, 152.f});
         panel->addChild(header);
         auto title = CCLabelBMFont::create("MYTHIX UTILITIES", "bigFont.fnt");
-        if (title) { title->setScale(0.62f); title->setColor(ccc3(255,145,65)); title->setPosition({150.f,19.f}); header->addChild(title); }
+        if (title) { title->setScale(0.62f); title->setColor(accentColor()); title->setPosition({150.f,19.f}); header->addChild(title); }
 
         m_noclipLabel = makeToggleLabel(Mod::get()->getSettingValue<bool>(NOCLIP_SETTING) ? "[X]  NOCLIP" : "[ ]  NOCLIP");
         m_particlesLabel = makeToggleLabel(Mod::get()->getSettingValue<bool>(NO_PARTICLES_SETTING) ? "[X]  NO PARTICLES" : "[ ]  NO PARTICLES");
@@ -208,7 +231,7 @@ public:
         Mod::get()->setSettingValue<bool>(NOCLIP_SETTING, value);
         if (m_noclipLabel) {
             m_noclipLabel->setString(value ? "[X]  NOCLIP" : "[ ]  NOCLIP");
-            m_noclipLabel->setColor(value ? ccc3(255,125,55) : ccc3(255,205,160));
+            m_noclipLabel->setColor(accentColor());
         }
     }
     void onParticles(CCObject*) {
@@ -216,7 +239,7 @@ public:
         Mod::get()->setSettingValue<bool>(NO_PARTICLES_SETTING, value);
         if (m_particlesLabel) {
             m_particlesLabel->setString(value ? "[X]  NO PARTICLES" : "[ ]  NO PARTICLES");
-            m_particlesLabel->setColor(value ? ccc3(255,125,55) : ccc3(255,205,160));
+            m_particlesLabel->setColor(accentColor());
         }
     }
     void onClose(CCObject*) { this->setVisible(false); }
@@ -243,7 +266,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
             return;
         bool enabled = Mod::get()->getSettingValue<bool>(NOCLIP_SETTING);
         m_fields->noclipLabel->setString(enabled ? "[X]  NOCLIP" : "[ ]  NOCLIP");
-        m_fields->noclipLabel->setColor(enabled ? ccc3(255, 125, 55) : ccc3(255, 205, 160));
+        m_fields->noclipLabel->setColor(accentColor());
     }
 
     void refreshParticlesLabel() {
@@ -251,7 +274,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
             return;
         bool enabled = Mod::get()->getSettingValue<bool>(NO_PARTICLES_SETTING);
         m_fields->particlesLabel->setString(enabled ? "[X]  NO PARTICLES" : "[ ]  NO PARTICLES");
-        m_fields->particlesLabel->setColor(enabled ? ccc3(255, 125, 55) : ccc3(255, 205, 160));
+        m_fields->particlesLabel->setColor(accentColor());
     }
 
     void onToggleNoclip(CCObject*) {
@@ -270,6 +293,26 @@ class $modify(MythixPauseLayer, PauseLayer) {
         openSettingsPopup(Mod::get());
     }
 
+    void onToggleAccentSlider(CCObject*) {
+        if (!m_fields->panel) return;
+        auto slider = typeinfo_cast<CCControlSlider*>(m_fields->panel->getChildByTag(771));
+        if (slider) slider->setVisible(!slider->isVisible());
+    }
+
+    void onAccentHueChanged(CCObject* sender, CCControlEvent) {
+        auto slider = typeinfo_cast<CCControlSlider*>(sender);
+        if (!slider) return;
+        Mod::get()->setSettingValue<int>(PANEL_ACCENT_HUE_SETTING, static_cast<int>(std::round(slider->getValue())));
+        auto color = accentColor();
+        if (m_fields->noclipLabel) m_fields->noclipLabel->setColor(color);
+        if (m_fields->particlesLabel) m_fields->particlesLabel->setColor(color);
+        auto top = m_fields->panel ? m_fields->panel->getChildByTag(0) : nullptr;
+        auto title = top ? typeinfo_cast<CCLabelBMFont*>(top->getChildByTag(772)) : nullptr;
+        if (title) title->setColor(color);
+        auto accent = m_fields->panel ? typeinfo_cast<CCLabelBMFont*>(m_fields->panel->getChildByTag(773)) : nullptr;
+        if (accent) accent->setColor(color);
+    }
+
     void onCloseUtilities(CCObject*) {
         if (m_fields->panel)
             m_fields->panel->setVisible(false);
@@ -279,7 +322,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
         if (m_fields->panel) {
             refreshNoclipLabel();
             refreshParticlesLabel();
-            m_fields->panel->setVisible(true);
+            showPanel(m_fields->panel);
         }
     }
 
@@ -288,27 +331,28 @@ class $modify(MythixPauseLayer, PauseLayer) {
             return;
 
         auto winSize = CCDirector::sharedDirector()->getWinSize();
-        auto panel = CCLayerColor::create(ccc4(19, 11, 13, 248), 300.f, 190.f);
+        auto panel = CCLayerColor::create(ccc4(19, 11, 13, 248), 340.f, 240.f);
         if (!panel)
             return;
 
         panel->setPosition({
-            (winSize.width - 320.f) / 2.f,
-            (winSize.height - 250.f) / 2.f
+            (winSize.width - 340.f) / 2.f,
+            (winSize.height - 240.f) / 2.f
         });
         panel->setZOrder(10000);
         this->addChild(panel);
         m_fields->panel = panel;
 
-        auto top = CCLayerColor::create(ccc4(72, 27, 19, 255), 300.f, 38.f);
-        top->setPosition({0.f, 152.f});
+        auto top = CCLayerColor::create(ccc4(72, 27, 19, 255), 340.f, 38.f);
+        top->setPosition({0.f, 202.f});
         panel->addChild(top);
 
         auto title = CCLabelBMFont::create("MYTHIX UTILITIES", "bigFont.fnt");
         if (title) {
             title->setScale(0.62f);
-            title->setColor(ccc3(255, 145, 65));
-            title->setPosition({160.f, 19.f});
+            title->setColor(accentColor());
+            title->setTag(772);
+            title->setPosition({170.f, 19.f});
             top->addChild(title);
         }
 
@@ -318,15 +362,15 @@ class $modify(MythixPauseLayer, PauseLayer) {
         auto prevKey = CCLabelBMFont::create("START POS KEYBINDS", "bigFont.fnt");
         auto nextKey = CCLabelBMFont::create("Previous: F     Next: G (defaults)", "bigFont.fnt");
         auto keyHint = CCLabelBMFont::create("Use the gear to customize both keys", "chatFont.fnt");
-        if (prevKey) { prevKey->setScale(.38f); prevKey->setColor(ccc3(255,205,160)); prevKey->setPosition({160.f, 45.f}); panel->addChild(prevKey); }
-        if (nextKey) { nextKey->setScale(.38f); nextKey->setColor(ccc3(255,205,160)); nextKey->setPosition({160.f, 28.f}); panel->addChild(nextKey); }
-        if (keyHint) { keyHint->setScale(.34f); keyHint->setColor(ccc3(205,165,135)); keyHint->setPosition({160.f, 12.f}); panel->addChild(keyHint); }
+        if (prevKey) { prevKey->setScale(.34f); prevKey->setColor(accentColor()); prevKey->setPosition({170.f, 25.f}); panel->addChild(prevKey); }
+        if (nextKey) { nextKey->setScale(.34f); nextKey->setColor(accentColor()); nextKey->setPosition({170.f, 10.f}); panel->addChild(nextKey); }
+        if (keyHint) { keyHint->setScale(.30f); keyHint->setColor(accentColor()); keyHint->setPosition({170.f, -5.f}); panel->addChild(keyHint); }
 
         auto gearSprite = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
         if (gearSprite) {
             gearSprite->setScale(.42f);
             auto gearButton = CCMenuItemSpriteExtra::create(gearSprite, this, menu_selector(MythixPauseLayer::onOpenStartPosSettings));
-            gearButton->setPosition({286.f, 45.f});
+            gearButton->setPosition({315.f, 25.f});
             auto gearMenu = CCMenu::create(gearButton, nullptr);
             if (gearMenu) { gearMenu->setPosition({0.f,0.f}); panel->addChild(gearMenu, 2); }
         }
@@ -340,9 +384,9 @@ class $modify(MythixPauseLayer, PauseLayer) {
 
 
         if (noclipButton)
-            noclipButton->setPosition({150.f, 112.f});
+            noclipButton->setPosition({170.f, 162.f});
         if (particlesButton)
-            particlesButton->setPosition({150.f, 72.f});
+            particlesButton->setPosition({170.f, 122.f});
 
         auto closeLabel = CCLabelBMFont::create("CLOSE", "bigFont.fnt");
         if (closeLabel) {
@@ -353,7 +397,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
             ? CCMenuItemLabel::create(closeLabel, this, menu_selector(MythixPauseLayer::onCloseUtilities))
             : nullptr;
         if (closeButton)
-            closeButton->setPosition({265.f, 170.f});
+            closeButton->setPosition({305.f, 220.f});
 
         auto menu = CCMenu::create();
         if (menu) {
@@ -366,6 +410,21 @@ class $modify(MythixPauseLayer, PauseLayer) {
 
         refreshNoclipLabel();
         refreshParticlesLabel();
+
+        auto accentLabel = CCLabelBMFont::create("ACCENT COLOR", "bigFont.fnt");
+        if (accentLabel) {
+            accentLabel->setScale(.40f); accentLabel->setColor(accentColor()); accentLabel->setTag(773);
+            auto accentButton = CCMenuItemLabel::create(accentLabel, this, menu_selector(MythixPauseLayer::onToggleAccentSlider));
+            if (accentButton) { accentButton->setPosition({170.f, 82.f}); menu->addChild(accentButton); }
+        }
+        auto slider = CCControlSlider::create("slidergroove.png", "sliderprogress.png", "sliderthumb.png");
+        if (slider) {
+            slider->setPosition({170.f, 52.f}); slider->setMinimumValue(0.f); slider->setMaximumValue(359.f);
+            slider->setValue(static_cast<float>(Mod::get()->getSettingValue<int>(PANEL_ACCENT_HUE_SETTING)));
+            slider->setTag(771); slider->setVisible(false);
+            slider->addTargetWithActionForControlEvents(this, menu_selector(MythixPauseLayer::onAccentHueChanged), CCControlEventValueChanged);
+            panel->addChild(slider, 3);
+        } else log::error("Could not create Mythix accent color slider");
         panel->setVisible(false);
     }
 
