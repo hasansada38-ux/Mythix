@@ -201,14 +201,9 @@ namespace {
             // divided by the game's current horizontal velocity. This avoids
             // assuming a fixed frame rate or hard-coding a jump duration.
             double currentVelocityX = std::fabs(player->getCurrentXVelocity());
-            if (s_hasPreviousPlayerSample && currentVelocityX > 0.25) {
-                float observedDx = std::fabs(playerX - s_lastPlayerX);
-                if (observedDx > 0.05f) {
-                    float measured = static_cast<float>(observedDx / currentVelocityX);
-                    if (std::isfinite(measured) && measured >= 0.002f && measured <= 2.0f)
-                        s_timeScale = s_timeScale * 0.70f + measured * 0.30f;
-                }
-            }
+            float observedStepX = 0.f;
+            if (s_hasPreviousPlayerSample && currentVelocityX > 0.25)
+                observedStepX = std::fabs(playerX - s_lastPlayerX);
             s_lastPlayerX = playerX;
             s_lastPlayerY = playerY;
             s_hasPreviousPlayerSample = true;
@@ -250,9 +245,9 @@ namespace {
             float speedX = static_cast<float>(currentVelocityX);
             if (speedX < 0.5f)
                 speedX = std::max(0.5f, player->m_playerSpeed);
-            float stepX = speedX * s_timeScale;
-            if (stepX < 0.5f)
-                stepX = std::max(0.5f, std::fabs(player->m_playerSpeed));
+            // Use actual horizontal displacement from the previous game update.
+            float stepX = observedStepX > 0.05f ? observedStepX : speedX / 60.f;
+            stepX = std::clamp(stepX, 0.5f, 16.f);
 
             float gravity = static_cast<float>(std::fabs(player->m_gravity));
             if (gravity < 0.05f || !std::isfinite(gravity))
@@ -354,8 +349,6 @@ namespace {
             float vy = initialVelocityY;
             bool grounded = initiallyGrounded;
             bool jumped = false;
-            float scale = std::clamp(s_timeScale, 0.002f, 2.0f);
-
             for (int frame = 0; frame < maxFrames; ++frame) {
                 if (!jumped && jumpDelay >= 0 && frame == jumpDelay && grounded) {
                     vy = jumpVelocity * gravityDirection;
@@ -368,8 +361,10 @@ namespace {
                 x += stepX;
 
                 if (!grounded && !(jumped && frame == jumpDelay)) {
-                    vy -= gravity * scale * gravityDirection;
-                    y += vy * scale;
+                    // Gravity and launch velocity are per-physics-step values.
+                    // Applying a second time scale shrank the predicted jump arc.
+                    vy -= gravity * gravityDirection;
+                    y += vy;
                 }
 
                 float newBottom = y;
@@ -489,7 +484,6 @@ namespace {
         inline static bool s_hasPreviousPlayerSample = false;
         inline static float s_lastPlayerX = 0.f;
         inline static float s_lastPlayerY = 0.f;
-        inline static float s_timeScale = 1.f;
         inline static std::string s_status = "Ready - enter a level";
         inline static std::vector<BotHazard> s_hazards;
         inline static std::vector<BotSolid> s_solids;
