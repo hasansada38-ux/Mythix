@@ -7,21 +7,14 @@
         "ios": "2.2081"
     },
     "id": "mythixgmd.mythix",
-    "name": "Mythix",
-    "version": "v1.0.0",
+    "name": "Mythix Utilities",
+    "version": "v1.1.0",
     "developer": "MythixGMD",
-    "description": "A customizable Geometry Dash mod menu for MythixGMD.",
+    "description": "Useful Geometry Dash gameplay utilities in the pause menu.",
     "dependencies": {
         "geode.node-ids": ">=v1.23.3"
     },
     "settings": {
-        "toggle-menu": {
-            "name": "Toggle Mythix Menu",
-            "description": "Press A to open or close the Mythix menu.",
-            "type": "keybind",
-            "default": "A",
-            "category": "universal"
-        },
         "noclip": {
             "name": "Noclip",
             "description": "Prevents player death while enabled.",
@@ -29,9 +22,9 @@
             "default": false,
             "category": "gameplay"
         },
-        "show-hitboxes": {
-            "name": "Show Hitboxes",
-            "description": "Shows Geometry Dash's hitboxes for level objects while playing.",
+        "no-particles": {
+            "name": "No Particles",
+            "description": "Hides Cocos particle-system effects while playing a level.",
             "type": "bool",
             "default": false,
             "category": "gameplay"
