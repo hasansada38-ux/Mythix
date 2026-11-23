@@ -35,11 +35,19 @@ namespace {
 
     void showPanel(CCNode* node) {
         if (!node) return;
-        node->stopAllActions(); node->setVisible(true);
+        node->stopAllActions();
+        node->setVisible(true);
+        // Both Mythix panels are CCLayer/CCNodeRGBA objects. Use the RGBA
+        // interface for opacity instead of calling it on the base CCNode.
+        auto rgbaNode = typeinfo_cast<CCNodeRGBA*>(node);
+        if (!rgbaNode) return;
         if (Mod::get()->getSettingValue<bool>(PANEL_FADE_SETTING)) {
-            node->setCascadeOpacityEnabled(true); node->setOpacity(0);
-            node->runAction(CCFadeTo::create(.24f, 255));
-        } else node->setOpacity(255);
+            rgbaNode->setCascadeOpacityEnabled(true);
+            rgbaNode->setOpacity(0);
+            rgbaNode->runAction(CCFadeTo::create(.24f, 255));
+        } else {
+            rgbaNode->setOpacity(255);
+        }
     }
 
     class BunnyIcon : public CCNode {
@@ -423,7 +431,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
             slider->setPosition({170.f, 52.f}); slider->setMinimumValue(0.f); slider->setMaximumValue(359.f);
             slider->setValue(static_cast<float>(Mod::get()->getSettingValue<int>(PANEL_ACCENT_HUE_SETTING)));
             slider->setTag(771); slider->setVisible(false);
-            slider->addTargetWithActionForControlEvents(this, menu_selector(MythixPauseLayer::onAccentHueChanged), CCControlEventValueChanged);
+            slider->addTargetWithActionForControlEvents(this, control_selector(MythixPauseLayer::onAccentHueChanged), CCControlEventValueChanged);
             panel->addChild(slider, 3);
         } else log::error("Could not create Mythix accent color slider");
         panel->setVisible(false);
