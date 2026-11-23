@@ -6,6 +6,8 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <fstream>
+#include <sstream>
 
 using namespace geode::prelude;
 
@@ -523,6 +525,182 @@ namespace {
         inline static std::vector<BotPad> s_pads;
     };
 }
+
+// Mythix macro recorder: frame-timed input capture and deterministic event replay.
+// Sub-frame integrations (CoS/CBS/CBF) are intentionally not claimed by this
+// baseline until their respective APIs are detected and integrated.
+namespace {
+    struct MacroInput {
+        int frame;
+        bool down;
+        int button;
+        bool player1;
+    };
+    struct SavedMacro {
+        std::string name;
+        std::vector<MacroInput> inputs;
+        int duration = 0;
+    };
+
+    class MythixMacroController {
+    public:
+        static bool recording() { return s_recording; }
+        static bool playing() { return s_playing; }
+        static std::string status() { return s_status; }
+        static int count() { return static_cast<int>(s_macros.size()); }
+
+        static void startRecording() {
+            s_current = {};
+            s_current.name = "Recording " + std::to_string(s_macros.size() + 1);
+            s_frame = 0;
+            s_recording = true;
+            s_playing = false;
+            s_status = "RECORDING - play normally";
+        }
+
+        static void stopRecording() {
+            if (!s_recording) return;
+            s_recording = false;
+            s_current.duration = s_frame;
+            if (!s_current.inputs.empty()) {
+                s_macros.push_back(s_current);
+                save();
+                s_status = "Recording Saved!";
+            } else {
+                s_status = "No inputs captured";
+            }
+        }
+
+        static void capture(bool down, int button, bool player1) {
+            if (!s_recording || s_playing) return;
+            s_current.inputs.push_back({s_frame, down, button, player1});
+        }
+
+        static void tick(PlayLayer* layer) {
+            if (!layer) return;
+            ++s_frame;
+            if (!s_playing) return;
+            if (s_playIndex >= s_playMacro.inputs.size()) {
+                s_playing = false;
+                s_status = "Playback finished";
+                return;
+            }
+            while (s_playIndex < s_playMacro.inputs.size() &&
+                   s_playMacro.inputs[s_playIndex].frame <= s_playFrame) {
+                auto const event = s_playMacro.inputs[s_playIndex++];
+                s_injecting = true;
+                layer->handleButton(event.down, event.button, event.player1);
+                s_injecting = false;
+            }
+            ++s_playFrame;
+        }
+
+        static bool injecting() { return s_injecting; }
+
+        static void play(size_t index) {
+            load();
+            if (index >= s_macros.size() || s_macros[index].inputs.empty()) {
+                s_status = "Recording unavailable";
+                return;
+            }
+            s_playMacro = s_macros[index];
+            s_playIndex = 0;
+            s_playFrame = 0;
+            s_frame = 0;
+            s_recording = false;
+            s_playing = true;
+            s_status = "PLAYING: " + s_playMacro.name;
+        }
+
+        static void showLibrary() {
+            load();
+            if (s_macros.empty()) {
+                FLAlertLayer::create("Bot Recordings", "No saved recordings yet. Press BOT LEVEL to record, then Stop Recording to save.", "OK")->show();
+                return;
+            }
+            std::string message;
+            for (size_t i = 0; i < s_macros.size(); ++i) {
+                auto const& macro = s_macros[i];
+                message += std::to_string(i + 1) + ". " + macro.name +
+                    " - " + std::to_string(macro.inputs.size()) + " inputs, " +
+                    std::to_string(macro.duration) + " frames\n";
+            }
+            message += "\nUse the Play Latest button to replay the newest recording.";
+            FLAlertLayer::create("Bot Recordings", message, "OK")->show();
+        }
+
+        static void playLatest() {
+            load();
+            if (!s_macros.empty()) play(s_macros.size() - 1);
+            else s_status = "No recordings to play";
+        }
+
+    private:
+        static std::string filePath() {
+            return (Mod::get()->getSaveDir() / "mythix-recordings.txt").string();
+        }
+        static void save() {
+            std::ofstream out(filePath(), std::ios::trunc);
+            if (!out) { s_status = "Could not save recording"; return; }
+            for (auto const& macro : s_macros) {
+                out << "M|" << macro.name << "|" << macro.duration << "\n";
+                for (auto const& event : macro.inputs)
+                    out << "I|" << event.frame << "|" << event.down << "|" << event.button << "|" << event.player1 << "\n";
+                out << "E\n";
+            }
+        }
+        static void load() {
+            if (s_loaded) return;
+            s_loaded = true;
+            std::ifstream in(filePath());
+            if (!in) return;
+            std::string line;
+            SavedMacro macro;
+            while (std::getline(in, line)) {
+                std::istringstream row(line);
+                char kind = 0; row >> kind;
+                if (kind == 'M') {
+                    if (!macro.name.empty()) s_macros.push_back(macro);
+                    macro = {};
+                    std::getline(row, macro.name, '|');
+                    if (!macro.name.empty() && macro.name[0] == '|') macro.name.erase(0, 1);
+                    row >> macro.duration;
+                } else if (kind == 'I') {
+                    MacroInput event{};
+                    char sep;
+                    row >> sep >> event.frame >> sep >> event.down >> sep >> event.button >> sep >> event.player1;
+                    macro.inputs.push_back(event);
+                } else if (kind == 'E') {
+                    if (!macro.name.empty()) s_macros.push_back(macro);
+                    macro = {};
+                }
+            }
+            if (!macro.name.empty()) s_macros.push_back(macro);
+        }
+
+        inline static bool s_recording = false;
+        inline static bool s_playing = false;
+        inline static bool s_injecting = false;
+        inline static bool s_loaded = false;
+        inline static int s_frame = 0;
+        inline static int s_playFrame = 0;
+        inline static size_t s_playIndex = 0;
+        inline static std::string s_status = "Ready - enter a level";
+        inline static SavedMacro s_current;
+        inline static SavedMacro s_playMacro;
+        inline static std::vector<SavedMacro> s_macros;
+    };
+}
+
+class $modify(MythixInputLayer, GJBaseGameLayer) {
+    void handleButton(bool down, int button, bool isPlayer1) {
+        GJBaseGameLayer::handleButton(down, button, isPlayer1);
+        auto layer = PlayLayer::get();
+        if (layer && static_cast<GJBaseGameLayer*>(layer) == this && !MythixMacroController::injecting())
+            MythixMacroController::capture(down, button, isPlayer1);
+    }
+};
+
 class $modify(MythixPlayLayer, PlayLayer) {
     // Preserve the existing Mythix noclip behavior.
     void destroyPlayer(PlayerObject* player, GameObject* object) {
@@ -534,7 +712,7 @@ class $modify(MythixPlayLayer, PlayLayer) {
 
     void postUpdate(float dt) {
         PlayLayer::postUpdate(dt);
-        MythixBotController::update(this);
+        MythixMacroController::tick(this);
     }
 };
 
@@ -576,22 +754,22 @@ class $modify(MythixPauseLayer, PauseLayer) {
 
     void refreshBotLabel() {
         if (m_fields->botLabel) {
-            bool enabled = MythixBotController::enabled();
-            m_fields->botLabel->setString(enabled ? "[X]  BOT LEVEL" : "[ ]  BOT LEVEL");
+            bool enabled = MythixMacroController::recording();
+            m_fields->botLabel->setString(enabled ? "[REC]  BOT LEVEL" : "[ ]  BOT LEVEL");
             m_fields->botLabel->setColor(enabled ? ccc3(255, 125, 55) : ccc3(255, 205, 160));
         }
         if (m_fields->botStatusLabel)
-            m_fields->botStatusLabel->setString(MythixBotController::status().c_str());
+            m_fields->botStatusLabel->setString(MythixMacroController::status().c_str());
     }
 
     void onToggleBot(CCObject*) {
-        auto layer = PlayLayer::get();
-        if (MythixBotController::enabled())
-            MythixBotController::stop(layer);
-        else
-            MythixBotController::start(layer);
+        if (MythixMacroController::recording()) MythixMacroController::stopRecording();
+        else MythixMacroController::startRecording();
         refreshBotLabel();
     }
+    void onStopRecording(CCObject*) { MythixMacroController::stopRecording(); refreshBotLabel(); }
+    void onViewRecordings(CCObject*) { MythixMacroController::showLibrary(); }
+    void onPlayLatest(CCObject*) { MythixMacroController::playLatest(); refreshBotLabel(); }
 
     void onToggleNoclip(CCObject*) {
         bool enabled = !Mod::get()->getSettingValue<bool>(NOCLIP_SETTING);
@@ -624,20 +802,20 @@ class $modify(MythixPauseLayer, PauseLayer) {
             return;
 
         auto winSize = CCDirector::sharedDirector()->getWinSize();
-        auto panel = CCLayerColor::create(ccc4(19, 11, 13, 248), 300.f, 230.f);
+        auto panel = CCLayerColor::create(ccc4(19, 11, 13, 248), 300.f, 280.f);
         if (!panel)
             return;
 
         panel->setPosition({
             (winSize.width - 300.f) / 2.f,
-            (winSize.height - 230.f) / 2.f
+            (winSize.height - 280.f) / 2.f
         });
         panel->setZOrder(10000);
         this->addChild(panel);
         m_fields->panel = panel;
 
         auto top = CCLayerColor::create(ccc4(72, 27, 19, 255), 300.f, 38.f);
-        top->setPosition({0.f, 192.f});
+        top->setPosition({0.f, 242.f});
         panel->addChild(top);
 
         auto title = CCLabelBMFont::create("MYTHIX UTILITIES", "bigFont.fnt");
@@ -666,16 +844,16 @@ class $modify(MythixPauseLayer, PauseLayer) {
         if (m_fields->botStatusLabel) {
             m_fields->botStatusLabel->setScale(0.30f);
             m_fields->botStatusLabel->setColor(ccc3(210, 185, 165));
-            m_fields->botStatusLabel->setPosition({150.f, 53.f});
+            m_fields->botStatusLabel->setPosition({150.f, 17.f});
             panel->addChild(m_fields->botStatusLabel);
         }
 
         if (noclipButton)
-            noclipButton->setPosition({150.f, 153.f});
+            noclipButton->setPosition({150.f, 205.f});
         if (particlesButton)
-            particlesButton->setPosition({150.f, 119.f});
+            particlesButton->setPosition({150.f, 170.f});
         if (botButton)
-            botButton->setPosition({150.f, 85.f});
+            botButton->setPosition({150.f, 135.f});
 
         auto closeLabel = CCLabelBMFont::create("CLOSE", "bigFont.fnt");
         if (closeLabel) {
@@ -686,7 +864,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
             ? CCMenuItemLabel::create(closeLabel, this, menu_selector(MythixPauseLayer::onCloseUtilities))
             : nullptr;
         if (closeButton)
-            closeButton->setPosition({150.f, 23.f});
+            closeButton->setPosition({265.f, 260.f});
 
         auto menu = CCMenu::create();
         if (menu) {
@@ -694,6 +872,15 @@ class $modify(MythixPauseLayer, PauseLayer) {
             if (noclipButton) menu->addChild(noclipButton);
             if (particlesButton) menu->addChild(particlesButton);
             if (botButton) menu->addChild(botButton);
+            auto stopLabel = makeToggleLabel("STOP RECORDING");
+            auto stopButton = CCMenuItemLabel::create(stopLabel, this, menu_selector(MythixPauseLayer::onStopRecording));
+            if (stopButton) { stopButton->setPosition({150.f, 100.f}); menu->addChild(stopButton); }
+            auto viewLabel = makeToggleLabel("VIEW BOT RECORDINGS");
+            auto viewButton = CCMenuItemLabel::create(viewLabel, this, menu_selector(MythixPauseLayer::onViewRecordings));
+            if (viewButton) { viewButton->setPosition({150.f, 65.f}); menu->addChild(viewButton); }
+            auto playLabel = makeToggleLabel("PLAY LATEST");
+            auto playButton = CCMenuItemLabel::create(playLabel, this, menu_selector(MythixPauseLayer::onPlayLatest));
+            if (playButton) { playButton->setPosition({150.f, 35.f}); menu->addChild(playButton); }
             if (closeButton) menu->addChild(closeButton);
             panel->addChild(menu);
         }
