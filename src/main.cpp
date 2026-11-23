@@ -282,13 +282,28 @@ namespace {
             float targetHeight = 0.f;
             bool hasTarget = false;
 
-            // Prefer the nearest hazard that intersects the player's current
-            // vertical travel lane. Preserve its real height so spikes placed
-            // on top of blocks receive a longer, higher-clearance takeoff.
+            // Find the platform currently supporting the player. Its far edge
+            // matters: a second jump may be needed before the player reaches it.
+            float currentPlatformRight = playerRight;
+            bool standingOnPlatform = false;
+            for (auto const& solid : s_solids) {
+                if (solid.left <= playerRight + 4.f &&
+                    solid.right >= playerLeft - 4.f &&
+                    std::fabs(solid.top - playerBottom) <= 20.f &&
+                    solid.bottom < playerBottom + 14.f) {
+                    currentPlatformRight = std::max(currentPlatformRight, solid.right);
+                    standingOnPlatform = true;
+                }
+            }
+
+            // Look for hazards in the reachable vertical band, not just at the
+            // player's current height. This includes spikes below an elevated
+            // pillar that become lethal as the player leaves its edge.
             for (auto const& hazard : s_hazards) {
                 if (hazard.right < playerRight - 12.f)
                     continue;
-                if (hazard.bottom > playerTop + 20.f || hazard.top < playerBottom - 8.f)
+                if (hazard.top < playerBottom - 112.f ||
+                    hazard.bottom > playerTop + 112.f)
                     continue;
                 targetLeft = hazard.left;
                 targetRight = hazard.right;
@@ -297,26 +312,47 @@ namespace {
                 break;
             }
 
-            // A raised solid whose base is at the current floor is an obstacle
-            // even when it has no hazard object (common in Stereo Madness).
-            // Do not mistake the ground/floor itself for a jump target.
-            for (auto const& solid : s_solids) {
-                if (solid.right < playerRight - 12.f)
-                    continue;
-                if (solid.bottom > playerBottom + 14.f)
-                    continue;
-                if (solid.top <= playerBottom + 8.f)
-                    continue;
-                float height = solid.top - playerBottom;
-                if (height > 112.f)
-                    continue; // beyond the conservative single-jump clearance
-                if (!hasTarget || solid.left < targetLeft) {
+            // If no hazard is in the way, plan the gap to the next reachable
+            // platform. This is the key multi-pillar case: a same-height or
+            // lower pillar is still a landing target, even though its top is
+            // not above the player's current feet.
+            if (!hasTarget) {
+                float platformEdge = standingOnPlatform ? currentPlatformRight : playerRight;
+                for (auto const& solid : s_solids) {
+                    if (solid.left <= playerRight + 8.f)
+                        continue;
+                    if (solid.bottom > playerBottom + 14.f)
+                        continue;
+                    float height = solid.top - playerBottom;
+                    if (height > 112.f || height < -112.f)
+                        continue;
+                    float gap = solid.left - platformEdge;
+                    if (gap <= 16.f)
+                        continue; // adjacent/touching surfaces need no jump
+                    targetLeft = solid.left;
+                    targetRight = solid.right;
+                    targetHeight = std::max(0.f, height);
+                    hasTarget = true;
+                    break;
+                }
+            }
+
+            // A raised block directly ahead is also a target, even if the
+            // level contains no separate hazard object for it.
+            if (!hasTarget) {
+                for (auto const& solid : s_solids) {
+                    if (solid.right < playerRight - 12.f ||
+                        solid.bottom > playerBottom + 14.f)
+                        continue;
+                    float height = solid.top - playerBottom;
+                    if (height <= 8.f || height > 112.f)
+                        continue;
                     targetLeft = solid.left;
                     targetRight = solid.right;
                     targetHeight = height;
                     hasTarget = true;
+                    break;
                 }
-                break;
             }
 
             if (!hasTarget)
