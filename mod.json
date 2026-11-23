@@ -8,7 +8,7 @@
     },
     "id": "mythixgmd.mythix",
     "name": "Mythix Utilities",
-    "version": "v1.1.0",
+    "version": "v1.2.0",
     "developer": "MythixGMD",
     "description": "Useful Geometry Dash gameplay utilities in the pause menu.",
     "dependencies": {
@@ -28,6 +28,13 @@
             "type": "bool",
             "default": false,
             "category": "gameplay"
+        },
+        "panel-keybind": {
+            "name": "Toggle Mythix Utilities Panel",
+            "description": "Global shortcut to open or close the Mythix Utilities panel.",
+            "type": "keybind",
+            "default": "A",
+            "category": "universal"
         }
     }
 }
