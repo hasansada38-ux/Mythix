@@ -28,6 +28,13 @@
             "type": "bool",
             "default": false,
             "category": "gameplay"
+        },
+        "show-hitboxes": {
+            "name": "Show Hitboxes",
+            "description": "Shows Geometry Dash's hitboxes for level objects while playing.",
+            "type": "bool",
+            "default": false,
+            "category": "gameplay"
         }
     }
 }
