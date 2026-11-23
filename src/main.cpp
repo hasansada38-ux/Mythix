@@ -89,16 +89,21 @@ namespace {
         float right;
     };
 
-    // Geometry Dash object IDs for automatic pads and click-activated orbs.
-    // Keep these separate from lethal hazards: pads activate on contact,
-    // while orbs require a one-frame player input during contact.
+    struct BotPrediction {
+        bool safe = true;
+        bool landed = false;
+        int collisionObject = 0;
+        int frames = 0;
+        float landingX = 0.f;
+    };
+
     static bool isBotPad(int id) {
         switch (id) {
-            case 35:   // Yellow jump pad
-            case 67:   // Blue gravity pad
-            case 140:  // Pink jump pad
-            case 1332: // Red jump pad
-            case 3005: // Spider pad
+            case 35:
+            case 67:
+            case 140:
+            case 1332:
+            case 3005:
                 return true;
             default:
                 return false;
@@ -107,25 +112,23 @@ namespace {
 
     static bool isBotOrb(int id) {
         switch (id) {
-            case 36:   // Yellow jump orb
-            case 84:   // Blue gravity orb
-            case 141:  // Pink jump orb
-            case 1022: // Green gravity orb
-            case 1330: // Black drop orb
-            case 1333: // Red jump orb
-            case 3004: // Spider orb
+            case 36:
+            case 84:
+            case 141:
+            case 1022:
+            case 1330:
+            case 1333:
+            case 3004:
                 return true;
             default:
                 return false;
         }
     }
 
-    // First controller revision with explicit pad/orb classification. It uses
-    // live player geometry and native input; it does not mutate a second world.
     class MythixBotController {
     public:
         static bool start(PlayLayer* layer) {
-            stop(layer, "Preparing bot...");
+            stop(layer, "Preparing live analysis...");
             if (!layer || !layer->m_player1 || !layer->m_objects) {
                 s_status = "Enter a level first";
                 return false;
@@ -135,53 +138,12 @@ namespace {
             s_solids.clear();
             s_orbs.clear();
             s_pads.clear();
-            for (unsigned int i = 0; i < layer->m_objects->count(); ++i) {
-                auto object = typeinfo_cast<GameObject*>(layer->m_objects->objectAtIndex(i));
-                if (!object || object->m_isDisabled)
-                    continue;
-
-                int objectID = object->m_objectID;
-                if (isBotPad(objectID)) {
-                    auto const& rect = object->getObjectRect();
-                    s_pads.push_back({rect.origin.x, rect.origin.x + rect.size.width});
-                    continue; // Pads activate on contact; plan to reach them without jumping over them.
-                }
-
-                if (isBotOrb(objectID)) {
-                    s_orbs.push_back({object, false, 0});
-                    continue;
-                }
-
-                auto const& rect = object->getObjectRect();
-                if (object->m_objectType == GameObjectType::Hazard) {
-                    s_hazards.push_back({
-                        rect.origin.x, rect.origin.x + rect.size.width,
-                        rect.origin.y, rect.origin.y + rect.size.height
-                    });
-                    continue;
-                }
-
-                // Solid blocks are separate from lethal hazards. Tracking their
-                // top surfaces lets the planner recognize raised platforms and
-                // blocks that carry hazards on their upper face.
-                if (object->m_objectType == GameObjectType::Solid) {
-                    s_solids.push_back({
-                        rect.origin.x, rect.origin.x + rect.size.width,
-                        rect.origin.y, rect.origin.y + rect.size.height
-                    });
-                }
-            }
-            std::sort(s_hazards.begin(), s_hazards.end(), [](BotHazard const& a, BotHazard const& b) {
-                return a.left < b.left;
-            });
-            std::sort(s_solids.begin(), s_solids.end(), [](BotSolid const& a, BotSolid const& b) {
-                return a.left < b.left;
-            });
+            s_hasPreviousPlayerSample = false;
+            scanLevel(layer);
 
             s_enabled = true;
             s_buttonHeld = false;
-            s_status = "Scanned " + std::to_string(s_hazards.size()) + " hazards, " +
-                std::to_string(s_orbs.size()) + " orbs - running";
+            s_status = "LIVE SCAN active - cube physics calibrated";
             return true;
         }
 
@@ -190,6 +152,7 @@ namespace {
                 layer->handleButton(false, static_cast<int>(PlayerButton::Jump), true);
             s_buttonHeld = false;
             s_enabled = false;
+            s_hasPreviousPlayerSample = false;
             s_status = message;
         }
 
@@ -200,8 +163,6 @@ namespace {
             if (!s_enabled || !layer)
                 return;
 
-            // A one-frame press is enough for a normal cube jump. Always release
-            // before deciding whether another jump is needed.
             if (s_buttonHeld) {
                 layer->handleButton(false, static_cast<int>(PlayerButton::Jump), true);
                 s_buttonHeld = false;
@@ -224,16 +185,36 @@ namespace {
                 return;
             }
 
+            // Rebuild the scene from the live object array every update. This
+            // keeps moving objects, disabled objects, and trigger changes fresh.
+            scanLevel(layer);
+
             auto const& playerRect = player->getObjectRect();
             float playerLeft = playerRect.origin.x;
-            float playerRight = playerLeft + playerRect.size.width;
             float playerBottom = playerRect.origin.y;
+            float playerRight = playerLeft + playerRect.size.width;
             float playerTop = playerBottom + playerRect.size.height;
+            float playerX = player->getPositionX();
+            float playerY = player->getPositionY();
 
-            // Orbs require a deliberate click while the player is actually
-            // overlapping the orb. The old 12px early margin caused premature
-            // taps, and marking an orb complete on the attempt hid failed clicks.
-            // Use a per-orb cooldown and only retire it after the player passes it.
+            // Estimate the physics time scale from actual horizontal movement
+            // divided by the game's current horizontal velocity. This avoids
+            // assuming a fixed frame rate or hard-coding a jump duration.
+            double currentVelocityX = std::fabs(player->getCurrentXVelocity());
+            if (s_hasPreviousPlayerSample && currentVelocityX > 0.25) {
+                float observedDx = std::fabs(playerX - s_lastPlayerX);
+                if (observedDx > 0.05f) {
+                    float measured = static_cast<float>(observedDx / currentVelocityX);
+                    if (std::isfinite(measured) && measured >= 0.002f && measured <= 2.0f)
+                        s_timeScale = s_timeScale * 0.70f + measured * 0.30f;
+                }
+            }
+            s_lastPlayerX = playerX;
+            s_lastPlayerY = playerY;
+            s_hasPreviousPlayerSample = true;
+
+            // Orb input is still a one-frame tap, but live scanning preserves
+            // each orb's cooldown/consumed state across scene refreshes.
             for (auto& orb : s_orbs) {
                 if (orb.cooldownFrames > 0)
                     --orb.cooldownFrames;
@@ -260,145 +241,255 @@ namespace {
                 if (overlapsOrb && orb.cooldownFrames == 0) {
                     layer->handleButton(true, static_cast<int>(PlayerButton::Jump), true);
                     s_buttonHeld = true;
-                    orb.cooldownFrames = 9; // avoid rapid repeated taps while still overlapping
-                    s_status = "Orb input sent - checking contact";
+                    orb.cooldownFrames = 10;
+                    s_status = "ORB CONTACT - one-frame input sent";
                     return;
                 }
             }
 
-            // Pads activate automatically on contact. Only plan a normal cube
-            // jump while grounded; inspect both lethal objects and raised solids.
-            if (!player->m_isOnGround)
+            float speedX = static_cast<float>(currentVelocityX);
+            if (speedX < 0.5f)
+                speedX = std::max(0.5f, player->m_playerSpeed);
+            float stepX = speedX * s_timeScale;
+            if (stepX < 0.5f)
+                stepX = std::max(0.5f, std::fabs(player->m_playerSpeed));
+
+            float gravity = static_cast<float>(std::fabs(player->m_gravity));
+            if (gravity < 0.05f || !std::isfinite(gravity))
+                gravity = 0.9582f;
+
+            float jumpVelocity = static_cast<float>(std::fabs(player->m_yStart));
+            if (jumpVelocity < 1.f || !std::isfinite(jumpVelocity))
+                jumpVelocity = 11.18f;
+
+            // Mini players have a reduced launch impulse in the game physics.
+            if (player->getScale() < 0.9f)
+                jumpVelocity *= 0.8f;
+
+            float gravityDirection = player->m_isUpsideDown ? -1.f : 1.f;
+            float liveYVelocity = static_cast<float>(player->getYVelocity());
+
+            if (!player->m_isOnGround) {
+                auto airborne = simulate(
+                    playerLeft, playerBottom, playerRect.size.width, playerRect.size.height,
+                    liveYVelocity, false, -1, stepX, gravity, jumpVelocity,
+                    gravityDirection, 42
+                );
+                if (airborne.safe) {
+                    s_status = "AIRBORNE - landing path clear (" +
+                        std::to_string(airborne.frames) + "f)";
+                }
+                else {
+                    s_status = "AIRBORNE - predicted collision ahead";
+                }
                 return;
-
-            float speed = static_cast<float>(std::fabs(player->getCurrentXVelocity()));
-            if (speed < 1.f)
-                speed = std::max(1.f, player->m_playerSpeed);
-            if (speed < 1.f)
-                speed = 300.f;
-
-            float targetLeft = 0.f;
-            float targetRight = 0.f;
-            float targetHeight = 0.f;
-            bool hasTarget = false;
-
-            // Find the platform currently supporting the player. Its far edge
-            // matters: a second jump may be needed before the player reaches it.
-            float currentPlatformRight = playerRight;
-            bool standingOnPlatform = false;
-            for (auto const& solid : s_solids) {
-                if (solid.left <= playerRight + 4.f &&
-                    solid.right >= playerLeft - 4.f &&
-                    std::fabs(solid.top - playerBottom) <= 20.f &&
-                    solid.bottom < playerBottom + 14.f) {
-                    currentPlatformRight = std::max(currentPlatformRight, solid.right);
-                    standingOnPlatform = true;
-                }
             }
 
-            // Look for hazards in the reachable vertical band, not just at the
-            // player's current height. This includes spikes below an elevated
-            // pillar that become lethal as the player leaves its edge.
-            for (auto const& hazard : s_hazards) {
-                if (hazard.right < playerRight - 12.f)
-                    continue;
-                if (hazard.top < playerBottom - 112.f ||
-                    hazard.bottom > playerTop + 112.f)
-                    continue;
-                targetLeft = hazard.left;
-                targetRight = hazard.right;
-                targetHeight = std::max(0.f, hazard.top - playerBottom);
-                hasTarget = true;
-                break;
-            }
-
-            // If no hazard is in the way, plan the gap to the next reachable
-            // platform. This is the key multi-pillar case: a same-height or
-            // lower pillar is still a landing target, even though its top is
-            // not above the player's current feet.
-            if (!hasTarget) {
-                float platformEdge = standingOnPlatform ? currentPlatformRight : playerRight;
-                for (auto const& solid : s_solids) {
-                    if (solid.left <= playerRight + 8.f)
-                        continue;
-                    if (solid.bottom > playerBottom + 14.f)
-                        continue;
-                    float height = solid.top - playerBottom;
-                    if (height > 112.f || height < -112.f)
-                        continue;
-                    float gap = solid.left - platformEdge;
-                    if (gap <= 16.f)
-                        continue; // adjacent/touching surfaces need no jump
-                    targetLeft = solid.left;
-                    targetRight = solid.right;
-                    targetHeight = std::max(0.f, height);
-                    hasTarget = true;
-                    break;
-                }
-            }
-
-            // A raised block directly ahead is also a target, even if the
-            // level contains no separate hazard object for it.
-            if (!hasTarget) {
-                for (auto const& solid : s_solids) {
-                    if (solid.right < playerRight - 12.f ||
-                        solid.bottom > playerBottom + 14.f)
-                        continue;
-                    float height = solid.top - playerBottom;
-                    if (height <= 8.f || height > 112.f)
-                        continue;
-                    targetLeft = solid.left;
-                    targetRight = solid.right;
-                    targetHeight = height;
-                    hasTarget = true;
-                    break;
-                }
-            }
-
-            if (!hasTarget)
-                return;
-
-            // Expand the target across adjacent hazards so a double/triple
-            // cluster is treated as one jump. Height contributes to lead time:
-            // a spike sitting on a block needs more clearance than a floor spike.
-            float clusterRight = targetRight;
-            for (auto const& hazard : s_hazards) {
-                if (hazard.left <= targetLeft)
-                    continue;
-                if (hazard.left > clusterRight + 28.f)
-                    break;
-                clusterRight = std::max(clusterRight, hazard.right);
-            }
-            float clusterWidth = clusterRight - targetLeft;
-
-            // Never jump across an automatic pad immediately before the target;
-            // allow its contact bounce to happen first.
-            for (auto const& pad : s_pads) {
-                if (pad.left <= targetLeft &&
-                    pad.right >= playerRight - 16.f &&
-                    pad.left - playerRight <= 190.f) {
-                    return;
-                }
-            }
-
-            float distance = targetLeft - playerRight;
-            float heightLead = std::max(0.f, targetHeight - playerRect.size.height);
-            float triggerDistance = std::clamp(
-                speed * 0.23f +
-                std::max(0.f, clusterWidth - 30.f) * 0.18f +
-                heightLead * 0.30f,
-                52.f, 118.f
+            // First ask whether continuing without input remains safe. If so,
+            // wait and re-evaluate next update rather than jumping early.
+            auto coast = simulate(
+                playerLeft, playerBottom, playerRect.size.width, playerRect.size.height,
+                0.f, true, -1, stepX, gravity, jumpVelocity,
+                gravityDirection, 34
             );
-            if (distance <= triggerDistance && distance >= -18.f) {
+
+            if (coast.safe) {
+                s_status = "LIVE SCAN: clear - waiting for next obstacle";
+                return;
+            }
+
+            // Search actual jump timings. The latest safe timing is selected,
+            // which avoids the old fixed-distance guess that launched too early
+            // or too late. Every candidate is checked against hazards AND solid
+            // block sides/undersides, not only spike objects.
+            int bestDelay = -1;
+            BotPrediction bestPrediction;
+            for (int delay = 0; delay <= 20; ++delay) {
+                auto candidate = simulate(
+                    playerLeft, playerBottom, playerRect.size.width, playerRect.size.height,
+                    0.f, true, delay, stepX, gravity, jumpVelocity,
+                    gravityDirection, 42
+                );
+                if (candidate.safe) {
+                    bestDelay = delay;
+                    bestPrediction = candidate;
+                }
+            }
+
+            // Automatic pads should be allowed to trigger before a normal jump.
+            if (bestDelay >= 0) {
+                for (auto const& pad : s_pads) {
+                    if (pad.left > playerRight + 2.f && pad.left < playerRight + stepX * (bestDelay + 2)) {
+                        s_status = "PAD AHEAD - letting automatic bounce activate";
+                        return;
+                    }
+                }
+            }
+
+            if (bestDelay == 0) {
                 layer->handleButton(true, static_cast<int>(PlayerButton::Jump), true);
                 s_buttonHeld = true;
-                s_status = "Jump planned for upcoming obstacle";
+                s_status = "JUMP NOW - trajectory safe, landing x " +
+                    std::to_string(static_cast<int>(bestPrediction.landingX));
+            }
+            else if (bestDelay > 0) {
+                s_status = "JUMP PREDICTION: safe in " + std::to_string(bestDelay) +
+                    "f; landing x " + std::to_string(static_cast<int>(bestPrediction.landingX));
+            }
+            else {
+                s_status = "NO SAFE JUMP FOUND - refusing blind input";
             }
         }
 
     private:
+        static BotPrediction simulate(
+            float startLeft, float startBottom, float width, float height,
+            float initialVelocityY, bool initiallyGrounded, int jumpDelay,
+            float stepX, float gravity, float jumpVelocity,
+            float gravityDirection, int maxFrames
+        ) {
+            BotPrediction result;
+            float x = startLeft;
+            float y = startBottom;
+            float vy = initialVelocityY;
+            bool grounded = initiallyGrounded;
+            bool jumped = false;
+            float scale = std::clamp(s_timeScale, 0.002f, 2.0f);
+
+            for (int frame = 0; frame < maxFrames; ++frame) {
+                if (!jumped && jumpDelay >= 0 && frame == jumpDelay && grounded) {
+                    vy = jumpVelocity * gravityDirection;
+                    grounded = false;
+                    jumped = true;
+                }
+
+                float oldBottom = y;
+                float oldTop = y + height;
+                x += stepX;
+
+                if (!grounded && !(jumped && frame == jumpDelay)) {
+                    vy -= gravity * scale * gravityDirection;
+                    y += vy * scale;
+                }
+
+                float newBottom = y;
+                float newTop = y + height;
+                float playerRight = x + width;
+
+                // Lethal objects are checked before landing surfaces.
+                for (auto const& hazard : s_hazards) {
+                    if (hazard.right < x || hazard.left > playerRight ||
+                        hazard.top < newBottom || hazard.bottom > newTop)
+                        continue;
+                    result.safe = false;
+                    result.collisionObject = -1;
+                    result.frames = frame + 1;
+                    return result;
+                }
+
+                bool landedThisFrame = false;
+                for (auto const& solid : s_solids) {
+                    if (solid.right <= x || solid.left >= playerRight)
+                        continue;
+
+                    bool verticalOverlap = newTop > solid.bottom && newBottom < solid.top;
+                    if (!verticalOverlap)
+                        continue;
+
+                    bool crossedTop = gravityDirection > 0.f &&
+                        vy <= 0.f && oldBottom >= solid.top - 2.f && newBottom <= solid.top + 2.f;
+                    bool crossedUnderside = gravityDirection < 0.f &&
+                        vy >= 0.f && oldTop <= solid.bottom + 2.f && newTop >= solid.bottom - 2.f;
+
+                    if (crossedTop || crossedUnderside) {
+                        if (crossedTop)
+                            y = solid.top;
+                        else
+                            y = solid.bottom - height;
+                        vy = 0.f;
+                        grounded = true;
+                        landedThisFrame = true;
+                        result.landed = true;
+                        result.landingX = x;
+                        break;
+                    }
+
+                    // A solid block intersecting the side or the player's head
+                    // is not a valid landing and must be treated as a collision.
+                    result.safe = false;
+                    result.collisionObject = 1;
+                    result.frames = frame + 1;
+                    return result;
+                }
+
+                result.frames = frame + 1;
+                if (landedThisFrame && jumped)
+                    return result;
+            }
+
+            result.landingX = x;
+            return result;
+        }
+
+        static void scanLevel(PlayLayer* layer) {
+            if (!layer || !layer->m_objects)
+                return;
+
+            auto previousOrbs = std::move(s_orbs);
+            s_hazards.clear();
+            s_solids.clear();
+            s_orbs.clear();
+            s_pads.clear();
+
+            for (unsigned int i = 0; i < layer->m_objects->count(); ++i) {
+                auto object = typeinfo_cast<GameObject*>(layer->m_objects->objectAtIndex(i));
+                if (!object || object->m_isDisabled || !object->isVisible())
+                    continue;
+
+                int objectID = object->m_objectID;
+                auto const& rect = object->getObjectRect();
+
+                if (isBotPad(objectID)) {
+                    s_pads.push_back({rect.origin.x, rect.origin.x + rect.size.width});
+                    continue;
+                }
+
+                if (isBotOrb(objectID)) {
+                    auto old = std::find_if(previousOrbs.begin(), previousOrbs.end(),
+                        [object](BotOrb const& entry) { return entry.object == object; });
+                    if (old != previousOrbs.end())
+                        s_orbs.push_back(*old);
+                    else
+                        s_orbs.push_back({object, false, 0});
+                    continue;
+                }
+
+                if (object->m_objectType == GameObjectType::Hazard) {
+                    s_hazards.push_back({
+                        rect.origin.x, rect.origin.x + rect.size.width,
+                        rect.origin.y, rect.origin.y + rect.size.height
+                    });
+                }
+                else if (object->m_objectType == GameObjectType::Solid) {
+                    s_solids.push_back({
+                        rect.origin.x, rect.origin.x + rect.size.width,
+                        rect.origin.y, rect.origin.y + rect.size.height
+                    });
+                }
+            }
+
+            std::sort(s_hazards.begin(), s_hazards.end(),
+                [](BotHazard const& a, BotHazard const& b) { return a.left < b.left; });
+            std::sort(s_solids.begin(), s_solids.end(),
+                [](BotSolid const& a, BotSolid const& b) { return a.left < b.left; });
+        }
+
         inline static bool s_enabled = false;
         inline static bool s_buttonHeld = false;
+        inline static bool s_hasPreviousPlayerSample = false;
+        inline static float s_lastPlayerX = 0.f;
+        inline static float s_lastPlayerY = 0.f;
+        inline static float s_timeScale = 1.f;
         inline static std::string s_status = "Ready - enter a level";
         inline static std::vector<BotHazard> s_hazards;
         inline static std::vector<BotSolid> s_solids;
@@ -406,7 +497,6 @@ namespace {
         inline static std::vector<BotPad> s_pads;
     };
 }
-
 class $modify(MythixPlayLayer, PlayLayer) {
     // Preserve the existing Mythix noclip behavior.
     void destroyPlayer(PlayerObject* player, GameObject* object) {
