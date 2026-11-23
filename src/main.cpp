@@ -431,7 +431,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
             slider->setPosition({170.f, 52.f}); slider->setMinimumValue(0.f); slider->setMaximumValue(359.f);
             slider->setValue(static_cast<float>(Mod::get()->getSettingValue<int>(PANEL_ACCENT_HUE_SETTING)));
             slider->setTag(771); slider->setVisible(false);
-            slider->addTargetWithActionForControlEvents(this, control_selector(MythixPauseLayer::onAccentHueChanged), CCControlEventValueChanged);
+            slider->addTargetWithActionForControlEvents(this, cccontrol_selector(MythixPauseLayer::onAccentHueChanged), CCControlEventValueChanged);
             panel->addChild(slider, 3);
         } else log::error("Could not create Mythix accent color slider");
         panel->setVisible(false);
