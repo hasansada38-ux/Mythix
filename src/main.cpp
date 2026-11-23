@@ -3,6 +3,9 @@
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/CCParticleSystemQuad.hpp>
+#include <Geode/modify/UILayer.hpp>
+#include <Geode/ui/GeodeUI.hpp>
+#include <Geode/binding/StartPosObject.hpp>
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -14,6 +17,8 @@ namespace {
     constexpr char const* NOCLIP_SETTING = "noclip";
     constexpr char const* NO_PARTICLES_SETTING = "no-particles";
     constexpr char const* PANEL_KEYBIND_SETTING = "panel-keybind";
+    constexpr char const* STARTPOS_PREV_KEYBIND = "startpos-prev-keybind";
+    constexpr char const* STARTPOS_NEXT_KEYBIND = "startpos-next-keybind";
 
     class WrenchIcon : public CCNode {
     public:
@@ -66,6 +71,46 @@ namespace {
 
 
 class $modify(MythixPlayLayer, PlayLayer) {
+    struct Fields {
+        std::vector<Ref<StartPosObject>> startPositions;
+        int selectedStartPos = 0;
+    };
+
+    void addObject(GameObject* object) {
+        if (object && object->m_objectID == 31) {
+            auto startPos = static_cast<StartPosObject*>(object);
+            if (startPos && startPos->m_startSettings && !startPos->m_startSettings->m_disableStartPos)
+                m_fields->startPositions.push_back(startPos);
+        }
+        PlayLayer::addObject(object);
+    }
+
+    void createObjectsFromSetupFinished() {
+        PlayLayer::createObjectsFromSetupFinished();
+        std::sort(m_fields->startPositions.begin(), m_fields->startPositions.end(),
+            [](auto const& a, auto const& b) { return a->getPositionX() < b->getPositionX(); });
+        if (m_startPosObject) {
+            auto it = std::find(m_fields->startPositions.begin(), m_fields->startPositions.end(), m_startPosObject);
+            if (it != m_fields->startPositions.end())
+                m_fields->selectedStartPos = static_cast<int>(it - m_fields->startPositions.begin()) + 1;
+        }
+    }
+
+    void switchStartPos(int direction) {
+        int count = static_cast<int>(m_fields->startPositions.size());
+        if (count <= 0) return;
+        int next = (m_fields->selectedStartPos + direction) % (count + 1);
+        if (next < 0) next += count + 1;
+        m_fields->selectedStartPos = next;
+        m_currentCheckpoint = nullptr;
+        m_isTestMode = next != 0;
+        updateTestModeLabel();
+        setStartPosObject(next == 0 ? nullptr : m_fields->startPositions[next - 1]);
+        if (m_isPracticeMode) resetLevelFromStart();
+        resetLevel();
+        startMusic();
+    }
+
     // Preserve the existing Mythix noclip behavior.
     void destroyPlayer(PlayerObject* player, GameObject* object) {
         if (Mod::get()->getSettingValue<bool>(NOCLIP_SETTING))
@@ -343,3 +388,63 @@ class $modify(MythixPauseLayer, PauseLayer) {
         }
     }
 };
+
+
+class $modify(MythixUILayer, UILayer) {
+    bool init(GJBaseGameLayer* baseGame) {
+        if (!UILayer::init(baseGame)) return false;
+        if (!PlayLayer::get()) return true;
+        auto menu = CCMenu::create();
+        if (!menu) return true;
+        menu->setID("mythix-startpos-switcher");
+        auto win = CCDirector::sharedDirector()->getWinSize();
+        menu->setPosition({win.width / 2.f, 42.f});
+        this->addChild(menu, 1000);
+
+        auto prevText = CCLabelBMFont::create("<", "bigFont.fnt");
+        auto nextText = CCLabelBMFont::create(">", "bigFont.fnt");
+        auto gearText = CCLabelBMFont::create("G", "bigFont.fnt");
+        auto count = CCLabelBMFont::create("0/0", "bigFont.fnt");
+        auto note = CCLabelBMFont::create("This will be removed when geode 2.2091 comes.", "chatFont.fnt");
+        if (prevText) {
+            prevText->setScale(.6f);
+            menu->addChild(CCMenuItemSpriteExtra::create(prevText, this, menu_selector(MythixUILayer::onPrevious)));
+            menu->getChildren();
+            static_cast<CCNode*>(menu->getChildren()->objectAtIndex(menu->getChildrenCount()-1))->setPosition({-58.f,0.f});
+        }
+        if (count) { count->setScale(.42f); count->setID("mythix-startpos-count"); count->setPosition({0.f,0.f}); menu->addChild(count); }
+        if (nextText) {
+            nextText->setScale(.6f);
+            auto item=CCMenuItemSpriteExtra::create(nextText,this,menu_selector(MythixUILayer::onNext));
+            item->setPosition({58.f,0.f}); menu->addChild(item);
+        }
+        if (gearText) {
+            gearText->setScale(.38f);
+            auto item=CCMenuItemSpriteExtra::create(gearText,this,menu_selector(MythixUILayer::onSettings));
+            item->setPosition({88.f,0.f}); menu->addChild(item);
+        }
+        if (note) { note->setScale(.30f); note->setOpacity(180); note->setPosition({0.f,-17.f}); menu->addChild(note); }
+        updateCount();
+        return true;
+    }
+    void onPrevious(CCObject*) { if(auto p=PlayLayer::get()) static_cast<MythixPlayLayer*>(p)->switchStartPos(-1); updateCount(); }
+    void onNext(CCObject*) { if(auto p=PlayLayer::get()) static_cast<MythixPlayLayer*>(p)->switchStartPos(1); updateCount(); }
+    void onSettings(CCObject*) { openSettingsPopup(Mod::get()); }
+    void updateCount() {
+        auto menu=this->getChildByID("mythix-startpos-switcher");
+        auto label=menu ? typeinfo_cast<CCLabelBMFont*>(menu->getChildByID("mythix-startpos-count")) : nullptr;
+        auto p=PlayLayer::get();
+        if(!label || !p) return;
+        auto layer=static_cast<MythixPlayLayer*>(p);
+        label->setString(fmt::format("{}/{}",layer->m_fields->selectedStartPos,layer->m_fields->startPositions.size()).c_str());
+    }
+};
+
+$on_game(Loaded) {
+    listenForKeybindSettingPresses(STARTPOS_PREV_KEYBIND, [](Keybind const&, bool down, bool repeat, double) {
+        if(down && !repeat) if(auto p=PlayLayer::get()) static_cast<MythixPlayLayer*>(p)->switchStartPos(-1);
+    });
+    listenForKeybindSettingPresses(STARTPOS_NEXT_KEYBIND, [](Keybind const&, bool down, bool repeat, double) {
+        if(down && !repeat) if(auto p=PlayLayer::get()) static_cast<MythixPlayLayer*>(p)->switchStartPos(1);
+    });
+}
