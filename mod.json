@@ -35,6 +35,20 @@
             "type": "keybind",
             "default": "A",
             "category": "universal"
+        },
+        "startpos-prev-keybind": {
+            "name": "Previous Start Position",
+            "description": "Move to the previous Start Position.",
+            "type": "keybind",
+            "default": "F",
+            "category": "gameplay"
+        },
+        "startpos-next-keybind": {
+            "name": "Next Start Position",
+            "description": "Move to the next Start Position.",
+            "type": "keybind",
+            "default": "G",
+            "category": "gameplay"
         }
     }
 }
