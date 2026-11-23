@@ -371,6 +371,25 @@ namespace {
                 float oldTop = y + height;
                 x += stepX;
 
+                // A landing is not permanent support. Re-check the platform
+                // under the player's feet (or head when upside down) every
+                // simulated frame so walking off a pillar starts a real fall.
+                if (grounded) {
+                    bool supported = false;
+                    for (auto const& solid : s_solids) {
+                        bool horizontalSupport = solid.right > x + 1.f && solid.left < x + width - 1.f;
+                        bool verticalSupport = gravityDirection > 0.f
+                            ? std::fabs(y - solid.top) <= 2.5f
+                            : std::fabs((y + height) - solid.bottom) <= 2.5f;
+                        if (horizontalSupport && verticalSupport) {
+                            supported = true;
+                            break;
+                        }
+                    }
+                    if (!supported)
+                        grounded = false;
+                }
+
                 if (!grounded && !(jumped && frame == jumpDelay)) {
                     // Gravity and launch velocity are per-physics-step values.
                     // Applying a second time scale shrank the predicted jump arc.
@@ -429,8 +448,10 @@ namespace {
                 }
 
                 result.frames = frame + 1;
-                if (landedThisFrame && jumped)
-                    return result;
+                // Continue the prediction after a landing. The next frames
+                // must include walking across the platform, leaving its edge,
+                // falling, and any following pillar or hazard. Returning here
+                // was the multi-pillar blind spot.
             }
 
             result.landingX = x;
