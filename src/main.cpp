@@ -2,6 +2,10 @@
 #include <Geode/modify/PauseLayer.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/CCParticleSystemQuad.hpp>
+#include <algorithm>
+#include <cmath>
+#include <string>
+#include <vector>
 
 using namespace geode::prelude;
 
@@ -57,6 +61,135 @@ namespace {
     }
 }
 
+
+
+namespace {
+    struct BotHazard {
+        float left;
+        float right;
+    };
+
+    // First autonomous controller: a live, geometry-aware cube controller for
+    // standard-gravity levels with static hazards. It scans the loaded level
+    // once, then uses the game's own player state and native input handler.
+    // It deliberately does not simulate by mutating a second live game world.
+    class MythixBotController {
+    public:
+        static bool start(PlayLayer* layer) {
+            stop(layer, "Preparing bot...");
+            if (!layer || !layer->m_player1 || !layer->m_objects) {
+                s_status = "Enter a level first";
+                return false;
+            }
+
+            s_hazards.clear();
+            for (unsigned int i = 0; i < layer->m_objects->count(); ++i) {
+                auto object = typeinfo_cast<GameObject*>(layer->m_objects->objectAtIndex(i));
+                if (!object || object->m_isDisabled || object->m_objectType != GameObjectType::Hazard)
+                    continue;
+                auto const& rect = object->getObjectRect();
+                s_hazards.push_back({rect.origin.x, rect.origin.x + rect.size.width});
+            }
+            std::sort(s_hazards.begin(), s_hazards.end(), [](BotHazard const& a, BotHazard const& b) {
+                return a.left < b.left;
+            });
+
+            s_enabled = true;
+            s_buttonHeld = false;
+            s_status = "Scanned " + std::to_string(s_hazards.size()) + " hazards - running";
+            return true;
+        }
+
+        static void stop(PlayLayer* layer, std::string const& message = "Bot stopped") {
+            if (s_buttonHeld && layer)
+                layer->handleButton(false, static_cast<int>(PlayerButton::Jump), true);
+            s_buttonHeld = false;
+            s_enabled = false;
+            s_status = message;
+        }
+
+        static bool enabled() { return s_enabled; }
+        static std::string const& status() { return s_status; }
+
+        static void update(PlayLayer* layer) {
+            if (!s_enabled || !layer)
+                return;
+
+            // A one-frame press is enough for a normal cube jump. Always release
+            // before deciding whether another jump is needed.
+            if (s_buttonHeld) {
+                layer->handleButton(false, static_cast<int>(PlayerButton::Jump), true);
+                s_buttonHeld = false;
+            }
+
+            auto player = layer->m_player1;
+            if (!player) {
+                stop(layer, "Player unavailable - stopped");
+                return;
+            }
+            if (player->m_isDead) {
+                stop(layer, "Died - bot stopped");
+                return;
+            }
+
+            bool cubeMode = !player->m_isShip && !player->m_isBall && !player->m_isBird &&
+                !player->m_isDart && !player->m_isRobot && !player->m_isSpider && !player->m_isSwing;
+            if (!cubeMode) {
+                stop(layer, "Unsupported mode: cube bot only");
+                return;
+            }
+
+            if (!player->m_isOnGround || s_hazards.empty())
+                return;
+
+            auto const& playerRect = player->getObjectRect();
+            float playerRight = playerRect.origin.x + playerRect.size.width;
+            BotHazard const* next = nullptr;
+            for (auto const& hazard : s_hazards) {
+                if (hazard.right >= playerRight - 12.f) {
+                    next = &hazard;
+                    break;
+                }
+            }
+            if (!next)
+                return;
+
+            float speed = static_cast<float>(std::fabs(player->getCurrentXVelocity()));
+            if (speed < 1.f)
+                speed = std::max(1.f, player->m_playerSpeed);
+            if (speed < 1.f)
+                speed = 300.f;
+
+            // Estimate the width of a contiguous spike/saw cluster so doubles
+            // and triples receive an earlier takeoff than a single obstacle.
+            float clusterRight = next->right;
+            for (auto const& hazard : s_hazards) {
+                if (hazard.left <= next->left)
+                    continue;
+                if (hazard.left > clusterRight + 28.f)
+                    break;
+                clusterRight = std::max(clusterRight, hazard.right);
+            }
+            float clusterWidth = clusterRight - next->left;
+            float triggerDistance = std::clamp(
+                speed * 0.27f + std::max(0.f, clusterWidth - 30.f) * 0.35f,
+                65.f, 135.f
+            );
+            float distance = next->left - playerRight;
+            if (distance <= triggerDistance && distance >= -20.f) {
+                layer->handleButton(true, static_cast<int>(PlayerButton::Jump), true);
+                s_buttonHeld = true;
+            }
+        }
+
+    private:
+        inline static bool s_enabled = false;
+        inline static bool s_buttonHeld = false;
+        inline static std::string s_status = "Ready - enter a level";
+        inline static std::vector<BotHazard> s_hazards;
+    };
+}
+
 class $modify(MythixPlayLayer, PlayLayer) {
     // Preserve the existing Mythix noclip behavior.
     void destroyPlayer(PlayerObject* player, GameObject* object) {
@@ -64,6 +197,11 @@ class $modify(MythixPlayLayer, PlayLayer) {
             return;
 
         PlayLayer::destroyPlayer(player, object);
+    }
+
+    void postUpdate(float dt) {
+        PlayLayer::postUpdate(dt);
+        MythixBotController::update(this);
     }
 };
 
@@ -83,6 +221,8 @@ class $modify(MythixPauseLayer, PauseLayer) {
         CCLayerColor* panel = nullptr;
         CCLabelBMFont* noclipLabel = nullptr;
         CCLabelBMFont* particlesLabel = nullptr;
+        CCLabelBMFont* botLabel = nullptr;
+        CCLabelBMFont* botStatusLabel = nullptr;
     };
 
     void refreshNoclipLabel() {
@@ -99,6 +239,25 @@ class $modify(MythixPauseLayer, PauseLayer) {
         bool enabled = Mod::get()->getSettingValue<bool>(NO_PARTICLES_SETTING);
         m_fields->particlesLabel->setString(enabled ? "[X]  NO PARTICLES" : "[ ]  NO PARTICLES");
         m_fields->particlesLabel->setColor(enabled ? ccc3(255, 125, 55) : ccc3(255, 205, 160));
+    }
+
+    void refreshBotLabel() {
+        if (m_fields->botLabel) {
+            bool enabled = MythixBotController::enabled();
+            m_fields->botLabel->setString(enabled ? "[X]  BOT LEVEL" : "[ ]  BOT LEVEL");
+            m_fields->botLabel->setColor(enabled ? ccc3(255, 125, 55) : ccc3(255, 205, 160));
+        }
+        if (m_fields->botStatusLabel)
+            m_fields->botStatusLabel->setString(MythixBotController::status().c_str());
+    }
+
+    void onToggleBot(CCObject*) {
+        auto layer = PlayLayer::get();
+        if (MythixBotController::enabled())
+            MythixBotController::stop(layer);
+        else
+            MythixBotController::start(layer);
+        refreshBotLabel();
     }
 
     void onToggleNoclip(CCObject*) {
@@ -122,6 +281,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
         if (m_fields->panel) {
             refreshNoclipLabel();
             refreshParticlesLabel();
+            refreshBotLabel();
             m_fields->panel->setVisible(true);
         }
     }
@@ -131,19 +291,20 @@ class $modify(MythixPauseLayer, PauseLayer) {
             return;
 
         auto winSize = CCDirector::sharedDirector()->getWinSize();
-        auto panel = CCLayerColor::create(ccc4(19, 11, 13, 248), 300.f, 174.f);
+        auto panel = CCLayerColor::create(ccc4(19, 11, 13, 248), 300.f, 230.f);
         if (!panel)
             return;
 
         panel->setPosition({
             (winSize.width - 300.f) / 2.f,
-            (winSize.height - 174.f) / 2.f
+            (winSize.height - 230.f) / 2.f
         });
         panel->setZOrder(10000);
         this->addChild(panel);
         m_fields->panel = panel;
 
         auto top = CCLayerColor::create(ccc4(72, 27, 19, 255), 300.f, 38.f);
+        top->setPosition({0.f, 192.f});
         panel->addChild(top);
 
         auto title = CCLabelBMFont::create("MYTHIX UTILITIES", "bigFont.fnt");
@@ -164,10 +325,24 @@ class $modify(MythixPauseLayer, PauseLayer) {
             m_fields->particlesLabel, this, menu_selector(MythixPauseLayer::onToggleParticles)
         );
 
+        m_fields->botLabel = makeToggleLabel("[ ]  BOT LEVEL");
+        auto botButton = CCMenuItemLabel::create(
+            m_fields->botLabel, this, menu_selector(MythixPauseLayer::onToggleBot)
+        );
+        m_fields->botStatusLabel = CCLabelBMFont::create("Ready - enter a level", "bigFont.fnt");
+        if (m_fields->botStatusLabel) {
+            m_fields->botStatusLabel->setScale(0.30f);
+            m_fields->botStatusLabel->setColor(ccc3(210, 185, 165));
+            m_fields->botStatusLabel->setPosition({150.f, 53.f});
+            panel->addChild(m_fields->botStatusLabel);
+        }
+
         if (noclipButton)
-            noclipButton->setPosition({150.f, 104.f});
+            noclipButton->setPosition({150.f, 153.f});
         if (particlesButton)
-            particlesButton->setPosition({150.f, 66.f});
+            particlesButton->setPosition({150.f, 119.f});
+        if (botButton)
+            botButton->setPosition({150.f, 85.f});
 
         auto closeLabel = CCLabelBMFont::create("CLOSE", "bigFont.fnt");
         if (closeLabel) {
@@ -178,19 +353,21 @@ class $modify(MythixPauseLayer, PauseLayer) {
             ? CCMenuItemLabel::create(closeLabel, this, menu_selector(MythixPauseLayer::onCloseUtilities))
             : nullptr;
         if (closeButton)
-            closeButton->setPosition({150.f, 24.f});
+            closeButton->setPosition({150.f, 23.f});
 
         auto menu = CCMenu::create();
         if (menu) {
             menu->setPosition({0.f, 0.f});
             if (noclipButton) menu->addChild(noclipButton);
             if (particlesButton) menu->addChild(particlesButton);
+            if (botButton) menu->addChild(botButton);
             if (closeButton) menu->addChild(closeButton);
             panel->addChild(menu);
         }
 
         refreshNoclipLabel();
         refreshParticlesLabel();
+        refreshBotLabel();
         panel->setVisible(false);
     }
 
@@ -199,6 +376,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
         if (m_fields->panel) {
             refreshNoclipLabel();
             refreshParticlesLabel();
+            refreshBotLabel();
             m_fields->panel->setVisible(true);
         }
     }
