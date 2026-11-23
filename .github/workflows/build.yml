@@ -14,6 +14,10 @@ jobs:
   build:
     name: Build Mythix for Windows
     runs-on: windows-latest
+    # Keep Windows package publications from overlapping across branch pushes/manual runs.
+    concurrency:
+      group: mythix-windows-package-publish
+      cancel-in-progress: false
 
     steps:
       - name: Check out repository
@@ -41,14 +45,23 @@ jobs:
           if (-not $built) { throw "No .geode package found under $env:BUILD_OUTPUT" }
           $package = Join-Path $env:RUNNER_TEMP 'Mythix-Windows.geode'
           Copy-Item -LiteralPath $built.FullName -Destination $package -Force
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git switch --orphan geode-windows
-          git rm -rf .
-          Copy-Item -LiteralPath $package -Destination 'Mythix-Windows.geode'
-          git add 'Mythix-Windows.geode'
-          git commit -m 'Publish standalone Windows Geode package'
-          git push origin HEAD:geode-windows --force
+
+          # Update the existing package-only branch instead of creating an orphan
+          # and force-pushing over a possibly newer publication.
+          git fetch origin geode-windows
+          git switch --force-create geode-windows --track origin/geode-windows
+          Copy-Item -LiteralPath $package -Destination 'Mythix-Windows.geode' -Force
+          git add -- 'Mythix-Windows.geode'
+
+          if (git diff --cached --quiet) {
+            Write-Host 'Published Windows package is already up to date.'
+          } else {
+            git commit -m 'Publish standalone Windows Geode package'
+            git push origin HEAD:geode-windows
+          }
 
       - name: Upload the Windows build
         uses: actions/upload-artifact@v4
