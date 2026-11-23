@@ -1,0 +1,58 @@
+name: Build Mythix for iOS
+
+on:
+  push:
+    branches:
+      - feature/autonomous-bot-bloodbath
+    paths:
+      - '**'
+      - '.github/workflows/build-ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-ios:
+    name: Build Mythix for iOS
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build Geode mod
+        id: build
+        uses: geode-sdk/build-geode-mod@main
+        with:
+          sdk: given
+          target: iOS
+          build-config: Release
+
+      - name: Verify packaged mod icon
+        env:
+          BUILD_OUTPUT: ${{ steps.build.outputs.build-output }}
+        run: python3 .github/scripts/verify_geode_logo.py "$BUILD_OUTPUT"
+
+      - name: Publish standalone iOS .geode
+        env:
+          BUILD_OUTPUT: ${{ steps.build.outputs.build-output }}
+        run: |
+          package_path="$(find "$BUILD_OUTPUT" -type f -name '*.geode' -print -quit)"
+          test -n "$package_path" || { echo "No .geode package found under $BUILD_OUTPUT"; exit 1; }
+          cp "$package_path" "$RUNNER_TEMP/Mythix-iOS.geode"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch --orphan geode-ios
+          cp "$RUNNER_TEMP/Mythix-iOS.geode" ./Mythix-iOS.geode
+          git add Mythix-iOS.geode
+          git commit -m 'Publish standalone iOS Geode package'
+          git push origin HEAD:geode-ios --force
+
+      - name: Upload the iOS build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mythix-iOS
+          path: ${{ steps.build.outputs.build-output }}
+          if-no-files-found: error
