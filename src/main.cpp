@@ -1,6 +1,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PauseLayer.hpp>
 #include <Geode/modify/PlayLayer.hpp>
+#include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/CCParticleSystemQuad.hpp>
 #include <algorithm>
 #include <cmath>
@@ -10,6 +11,7 @@
 #include <sstream>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 
 using namespace geode::prelude;
 
