@@ -8,6 +8,8 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <cstdio>
+#include <cstdlib>
 
 using namespace geode::prelude;
 
@@ -711,8 +713,8 @@ class $modify(MythixPlayLayer, PlayLayer) {
     }
 
     void postUpdate(float dt) {
-        PlayLayer::postUpdate(dt);
         MythixMacroController::tick(this);
+        PlayLayer::postUpdate(dt);
     }
 };
 
