@@ -20,10 +20,10 @@ namespace {
     constexpr char const* STARTPOS_PREV_KEYBIND = "startpos-prev-keybind";
     constexpr char const* STARTPOS_NEXT_KEYBIND = "startpos-next-keybind";
 
-    class WrenchIcon : public CCNode {
+    class BunnyIcon : public CCNode {
     public:
-        static WrenchIcon* create() {
-            auto ret = new WrenchIcon();
+        static BunnyIcon* create() {
+            auto ret = new BunnyIcon();
             if (ret && ret->init()) {
                 ret->autorelease();
                 return ret;
@@ -33,27 +33,15 @@ namespace {
         }
 
         bool init() override {
-            if (!CCNode::init())
-                return false;
-
-            // A compact, centered wrench glyph. All strokes stay well inside
-            // the 32x32 canvas; BasedButtonSprite applies an additional fit scale.
+            if (!CCNode::init()) return false;
             this->setContentSize({32.f, 32.f});
-            auto draw = CCDrawNode::create();
-            if (!draw)
-                return false;
-
-            auto metal = ccc4f(1.f, 0.91f, 0.78f, 1.f);
-
-            // Rounded handle and end cap.
-            draw->drawSegment({9.5f, 9.5f}, {18.5f, 18.5f}, 2.2f, metal);
-            draw->drawDot({9.5f, 9.5f}, 2.2f, metal);
-
-            // Open jaw at the head of the wrench.
-            draw->drawSegment({17.5f, 17.5f}, {23.5f, 23.5f}, 2.2f, metal);
-            draw->drawSegment({17.5f, 17.5f}, {23.5f, 14.5f}, 2.2f, metal);
-
-            this->addChild(draw);
+            auto bunny = CCSprite::create("mythix-bunny.png");
+            if (!bunny) return false;
+            auto size = bunny->getContentSize();
+            float fit = std::min(28.f / size.width, 28.f / size.height);
+            bunny->setScale(fit);
+            bunny->setPosition({16.f, 16.f});
+            this->addChild(bunny);
             return true;
         }
     };
@@ -389,7 +377,7 @@ class $modify(MythixPauseLayer, PauseLayer) {
 
         createUtilitiesPanel();
 
-        auto icon = WrenchIcon::create();
+        auto icon = BunnyIcon::create();
         if (!icon)
             return;
 
@@ -398,8 +386,6 @@ class $modify(MythixPauseLayer, PauseLayer) {
         );
         if (!buttonSprite)
             return;
-        // Explicitly constrain the wrench glyph to the safe inner area of the circle.
-        buttonSprite->setTopRelativeScale(0.45f);
         buttonSprite->setScale(0.6f);
 
         auto button = CCMenuItemSpriteExtra::create(
