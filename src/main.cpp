@@ -79,6 +79,7 @@ class $modify(MythixPlayLayer, PlayLayer) {
     }
 };
 
+// Global panel shortcut is configurable in Geode settings; bot systems are intentionally removed.
 // Suppress Cocos particle-system rendering while a level is active.
 // This catches particle systems created by level objects and player effects.
 class $modify(MythixParticleSystem, CCParticleSystemQuad) {
