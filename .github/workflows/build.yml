@@ -27,6 +27,11 @@ jobs:
           target: Win64
           build-config: Release
 
+      - name: Verify packaged mod icon
+        env:
+          BUILD_OUTPUT: ${{ steps.build.outputs.build-output }}
+        run: python .github/scripts/verify_geode_logo.py "$env:BUILD_OUTPUT"
+
       - name: Publish standalone Windows .geode
         shell: pwsh
         env:
@@ -67,6 +72,11 @@ jobs:
           sdk: given
           target: Android64
           build-config: Release
+
+      - name: Verify packaged mod icon
+        env:
+          BUILD_OUTPUT: ${{ steps.build.outputs.build-output }}
+        run: python3 .github/scripts/verify_geode_logo.py "$BUILD_OUTPUT"
 
       - name: Publish standalone Android64 .geode
         env:
