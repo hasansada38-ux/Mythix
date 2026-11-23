@@ -67,11 +67,21 @@ namespace {
     struct BotHazard {
         float left;
         float right;
+        float bottom;
+        float top;
+    };
+
+    struct BotSolid {
+        float left;
+        float right;
+        float bottom;
+        float top;
     };
 
     struct BotOrb {
         GameObject* object;
         bool activated;
+        int cooldownFrames;
     };
 
     struct BotPad {
@@ -122,6 +132,7 @@ namespace {
             }
 
             s_hazards.clear();
+            s_solids.clear();
             s_orbs.clear();
             s_pads.clear();
             for (unsigned int i = 0; i < layer->m_objects->count(); ++i) {
@@ -137,17 +148,33 @@ namespace {
                 }
 
                 if (isBotOrb(objectID)) {
-                    s_orbs.push_back({object, false});
+                    s_orbs.push_back({object, false, 0});
                     continue;
                 }
 
-                if (object->m_objectType != GameObjectType::Hazard)
-                    continue;
-
                 auto const& rect = object->getObjectRect();
-                s_hazards.push_back({rect.origin.x, rect.origin.x + rect.size.width});
+                if (object->m_objectType == GameObjectType::Hazard) {
+                    s_hazards.push_back({
+                        rect.origin.x, rect.origin.x + rect.size.width,
+                        rect.origin.y, rect.origin.y + rect.size.height
+                    });
+                    continue;
+                }
+
+                // Solid blocks are separate from lethal hazards. Tracking their
+                // top surfaces lets the planner recognize raised platforms and
+                // blocks that carry hazards on their upper face.
+                if (object->m_objectType == GameObjectType::Solid) {
+                    s_solids.push_back({
+                        rect.origin.x, rect.origin.x + rect.size.width,
+                        rect.origin.y, rect.origin.y + rect.size.height
+                    });
+                }
             }
             std::sort(s_hazards.begin(), s_hazards.end(), [](BotHazard const& a, BotHazard const& b) {
+                return a.left < b.left;
+            });
+            std::sort(s_solids.begin(), s_solids.end(), [](BotSolid const& a, BotSolid const& b) {
                 return a.left < b.left;
             });
 
@@ -203,43 +230,45 @@ namespace {
             float playerBottom = playerRect.origin.y;
             float playerTop = playerBottom + playerRect.size.height;
 
-            // Orbs need a timed jump-button press. Use a small approach margin
-            // around the live player/orb rectangles so a fast-moving player does
-            // not miss the activation window between postUpdate samples.
-            // Check while airborne and before considering another ground jump.
+            // Orbs require a deliberate click while the player is actually
+            // overlapping the orb. The old 12px early margin caused premature
+            // taps, and marking an orb complete on the attempt hid failed clicks.
+            // Use a per-orb cooldown and only retire it after the player passes it.
             for (auto& orb : s_orbs) {
+                if (orb.cooldownFrames > 0)
+                    --orb.cooldownFrames;
                 if (orb.activated || !orb.object || orb.object->m_isDisabled)
                     continue;
 
                 auto const& orbRect = orb.object->getObjectRect();
-                constexpr float ORB_APPROACH_MARGIN = 12.f;
-                bool overlapsOrb =
-                    playerRight >= orbRect.origin.x - ORB_APPROACH_MARGIN &&
-                    playerLeft <= orbRect.origin.x + orbRect.size.width + ORB_APPROACH_MARGIN &&
-                    playerTop >= orbRect.origin.y - ORB_APPROACH_MARGIN &&
-                    playerBottom <= orbRect.origin.y + orbRect.size.height + ORB_APPROACH_MARGIN;
+                float orbLeft = orbRect.origin.x;
+                float orbRight = orbLeft + orbRect.size.width;
+                float orbBottom = orbRect.origin.y;
+                float orbTop = orbBottom + orbRect.size.height;
 
-                if (overlapsOrb) {
+                if (playerLeft > orbRight + 3.f) {
+                    orb.activated = true;
+                    continue;
+                }
+
+                bool overlapsOrb =
+                    playerRight >= orbLeft &&
+                    playerLeft <= orbRight &&
+                    playerTop >= orbBottom &&
+                    playerBottom <= orbTop;
+
+                if (overlapsOrb && orb.cooldownFrames == 0) {
                     layer->handleButton(true, static_cast<int>(PlayerButton::Jump), true);
                     s_buttonHeld = true;
-                    orb.activated = true;
-                    s_status = "Activated orb " + std::to_string(orb.object->m_objectID);
+                    orb.cooldownFrames = 9; // avoid rapid repeated taps while still overlapping
+                    s_status = "Orb input sent - checking contact";
                     return;
                 }
             }
 
-            // Pads activate automatically when touched. The cube jump planner
-            // should only evaluate normal ground jumps when the player is grounded.
-            if (!player->m_isOnGround || s_hazards.empty())
-                return;
-            BotHazard const* next = nullptr;
-            for (auto const& hazard : s_hazards) {
-                if (hazard.right >= playerRight - 12.f) {
-                    next = &hazard;
-                    break;
-                }
-            }
-            if (!next)
+            // Pads activate automatically on contact. Only plan a normal cube
+            // jump while grounded; inspect both lethal objects and raised solids.
+            if (!player->m_isOnGround)
                 return;
 
             float speed = static_cast<float>(std::fabs(player->getCurrentXVelocity()));
@@ -248,39 +277,86 @@ namespace {
             if (speed < 1.f)
                 speed = 300.f;
 
-            // Estimate the width of a contiguous spike/saw cluster so doubles
-            // and triples receive an earlier takeoff than a single obstacle.
-            float clusterRight = next->right;
+            float targetLeft = 0.f;
+            float targetRight = 0.f;
+            float targetHeight = 0.f;
+            bool hasTarget = false;
+
+            // Prefer the nearest hazard that intersects the player's current
+            // vertical travel lane. Preserve its real height so spikes placed
+            // on top of blocks receive a longer, higher-clearance takeoff.
             for (auto const& hazard : s_hazards) {
-                if (hazard.left <= next->left)
+                if (hazard.right < playerRight - 12.f)
+                    continue;
+                if (hazard.bottom > playerTop + 20.f || hazard.top < playerBottom - 8.f)
+                    continue;
+                targetLeft = hazard.left;
+                targetRight = hazard.right;
+                targetHeight = std::max(0.f, hazard.top - playerBottom);
+                hasTarget = true;
+                break;
+            }
+
+            // A raised solid whose base is at the current floor is an obstacle
+            // even when it has no hazard object (common in Stereo Madness).
+            // Do not mistake the ground/floor itself for a jump target.
+            for (auto const& solid : s_solids) {
+                if (solid.right < playerRight - 12.f)
+                    continue;
+                if (solid.bottom > playerBottom + 14.f)
+                    continue;
+                if (solid.top <= playerBottom + 8.f)
+                    continue;
+                float height = solid.top - playerBottom;
+                if (height > 112.f)
+                    continue; // beyond the conservative single-jump clearance
+                if (!hasTarget || solid.left < targetLeft) {
+                    targetLeft = solid.left;
+                    targetRight = solid.right;
+                    targetHeight = height;
+                    hasTarget = true;
+                }
+                break;
+            }
+
+            if (!hasTarget)
+                return;
+
+            // Expand the target across adjacent hazards so a double/triple
+            // cluster is treated as one jump. Height contributes to lead time:
+            // a spike sitting on a block needs more clearance than a floor spike.
+            float clusterRight = targetRight;
+            for (auto const& hazard : s_hazards) {
+                if (hazard.left <= targetLeft)
                     continue;
                 if (hazard.left > clusterRight + 28.f)
                     break;
                 clusterRight = std::max(clusterRight, hazard.right);
             }
-            float clusterWidth = clusterRight - next->left;
+            float clusterWidth = clusterRight - targetLeft;
 
-            // If an automatic pad is between the player and this hazard, do not
-            // launch early and sail over it. Let the player contact the pad;
-            // its own bounce handles the following section.
+            // Never jump across an automatic pad immediately before the target;
+            // allow its contact bounce to happen first.
             for (auto const& pad : s_pads) {
-                if (pad.left <= next->left &&
+                if (pad.left <= targetLeft &&
                     pad.right >= playerRight - 16.f &&
                     pad.left - playerRight <= 190.f) {
                     return;
                 }
             }
 
-            // The previous distance estimate launched far too early on long
-            // clusters. Use a shorter lead that scales gently with speed/width.
+            float distance = targetLeft - playerRight;
+            float heightLead = std::max(0.f, targetHeight - playerRect.size.height);
             float triggerDistance = std::clamp(
-                speed * 0.12f + std::max(0.f, clusterWidth - 30.f) * 0.20f,
-                32.f, 72.f
+                speed * 0.23f +
+                std::max(0.f, clusterWidth - 30.f) * 0.18f +
+                heightLead * 0.30f,
+                52.f, 118.f
             );
-            float distance = next->left - playerRight;
-            if (distance <= triggerDistance && distance >= -20.f) {
+            if (distance <= triggerDistance && distance >= -18.f) {
                 layer->handleButton(true, static_cast<int>(PlayerButton::Jump), true);
                 s_buttonHeld = true;
+                s_status = "Jump planned for upcoming obstacle";
             }
         }
 
@@ -289,6 +365,7 @@ namespace {
         inline static bool s_buttonHeld = false;
         inline static std::string s_status = "Ready - enter a level";
         inline static std::vector<BotHazard> s_hazards;
+        inline static std::vector<BotSolid> s_solids;
         inline static std::vector<BotOrb> s_orbs;
         inline static std::vector<BotPad> s_pads;
     };
