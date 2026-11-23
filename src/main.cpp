@@ -15,6 +15,7 @@ protected:
     CCLayerColor* m_introPanel = nullptr;
     CCLayerColor* m_featuresPanel = nullptr;
     CCLabelBMFont* m_noclipLabel = nullptr;
+    CCLabelBMFont* m_hitboxesLabel = nullptr;
 
     void refreshNoclipLabel() {
         if (!m_noclipLabel)
@@ -23,6 +24,15 @@ protected:
         bool enabled = Mod::get()->getSettingValue<bool>("noclip");
         m_noclipLabel->setString(enabled ? "[X]  NOCLIP" : "[ ]  NOCLIP");
         m_noclipLabel->setColor(enabled ? ccc3(255, 125, 55) : ccc3(255, 205, 160));
+    }
+
+    void refreshHitboxesLabel() {
+        if (!m_hitboxesLabel)
+            return;
+
+        bool enabled = Mod::get()->getSettingValue<bool>("show-hitboxes");
+        m_hitboxesLabel->setString(enabled ? "[X]  SHOW HITBOXES" : "[ ]  SHOW HITBOXES");
+        m_hitboxesLabel->setColor(enabled ? ccc3(255, 125, 55) : ccc3(255, 205, 160));
     }
 
     CCMenuItemLabel* makeButton(
@@ -141,8 +151,6 @@ public:
 
         m_noclipLabel = CCLabelBMFont::create("[ ]  NOCLIP", "bigFont.fnt");
         if (m_noclipLabel) {
-            // Keep the checkbox label compact; position the menu item itself
-            // because CCMenuItemLabel controls its child label's position.
             m_noclipLabel->setScale(0.40f);
             m_noclipLabel->setAnchorPoint({0.5f, 0.5f});
 
@@ -153,13 +161,33 @@ public:
             );
 
             if (noclipButton) {
-                noclipButton->setPosition({112.f, 82.f});
+                noclipButton->setPosition({112.f, 88.f});
                 auto menu = CCMenu::create(noclipButton, nullptr);
                 menu->setPosition({0.f, 0.f});
                 m_featuresPanel->addChild(menu);
             }
         }
         refreshNoclipLabel();
+
+        m_hitboxesLabel = CCLabelBMFont::create("[ ]  SHOW HITBOXES", "bigFont.fnt");
+        if (m_hitboxesLabel) {
+            m_hitboxesLabel->setScale(0.40f);
+            m_hitboxesLabel->setAnchorPoint({0.5f, 0.5f});
+
+            auto hitboxesButton = CCMenuItemLabel::create(
+                m_hitboxesLabel,
+                this,
+                menu_selector(MythixMenu::onToggleHitboxes)
+            );
+
+            if (hitboxesButton) {
+                hitboxesButton->setPosition({142.f, 57.f});
+                auto menu = CCMenu::create(hitboxesButton, nullptr);
+                menu->setPosition({0.f, 0.f});
+                m_featuresPanel->addChild(menu);
+            }
+        }
+        refreshHitboxesLabel();
 
         auto backButton = makeButton("BACK", 112.f, 28.f, menu_selector(MythixMenu::onBack));
         auto closeButton = makeButton("CLOSE", 228.f, 28.f, menu_selector(MythixMenu::onClose));
@@ -174,8 +202,6 @@ public:
         m_rootPanel->setVisible(false);
 
         // Build Cube 459 through Geometry Dash's own icon renderer.
-        // The raw player_459_001.png frame is not guaranteed to be in the
-        // sprite-frame cache on Android until the game has loaded that icon.
         auto cubeIcon = GJItemIcon::create(
             UnlockType::Cube,
             459,
@@ -196,10 +222,6 @@ public:
             );
 
             if (cubeButton) {
-                // CCMenu is centered on the screen by default. Keep that
-                // default transform and position the item relative to its center.
-                // Setting the menu to (0, 0) while using full-screen item
-                // coordinates shifts the launcher off-screen.
                 auto mobileMenu = CCMenu::create(cubeButton, nullptr);
                 this->addChild(mobileMenu, 10001);
 
@@ -225,6 +247,18 @@ public:
         bool enabled = !Mod::get()->getSettingValue<bool>("noclip");
         Mod::get()->setSettingValue<bool>("noclip", enabled);
         refreshNoclipLabel();
+    }
+
+    void onToggleHitboxes(CCObject*) {
+        bool enabled = !Mod::get()->getSettingValue<bool>("show-hitboxes");
+        Mod::get()->setSettingValue<bool>("show-hitboxes", enabled);
+        refreshHitboxesLabel();
+
+        // Refresh immediately so the hitboxes appear/disappear without
+        // requiring the player to restart the level.
+        if (auto playLayer = PlayLayer::get()) {
+            playLayer->updateVisibility(0.f);
+        }
     }
 
     void onOpenFeatures(CCObject*) {
@@ -267,7 +301,7 @@ public:
     }
 
     CREATE_FUNC(MythixMenu);
-};
+}
 
 namespace {
     void toggleMythixMenu() {
@@ -309,6 +343,20 @@ class $modify(MythixPlayLayer, PlayLayer) {
 #ifndef GEODE_IS_ANDROID
         menu->setVisible(false);
 #endif
+    }
+
+    void updateVisibility(float dt) {
+        PlayLayer::updateVisibility(dt);
+
+        if (!m_debugDrawNode)
+            return;
+
+        if (Mod::get()->getSettingValue<bool>("show-hitboxes")) {
+            // Reuse Geometry Dash's own debug-hitbox renderer so object
+            // collision shapes, slopes, and special hitboxes stay accurate.
+            PlayLayer::updateDebugDraw();
+            m_debugDrawNode->setVisible(true);
+        }
     }
 
     // Initial noclip implementation: prevent death while enabled.
