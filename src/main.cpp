@@ -33,20 +33,38 @@ namespace {
         return ccc3(static_cast<GLubyte>(r*255), static_cast<GLubyte>(g*255), static_cast<GLubyte>(b*255));
     }
 
+    void fadeLayer(CCLayerColor* layer, bool enabled) {
+        if (!layer) return;
+        layer->stopAllActions();
+        layer->setCascadeOpacityEnabled(true);
+        if (enabled) {
+            layer->setOpacity(0);
+            layer->runAction(CCFadeTo::create(.30f, 255));
+        } else {
+            layer->setOpacity(255);
+        }
+    }
+
     void showPanel(CCNode* node) {
         if (!node) return;
         node->stopAllActions();
         node->setVisible(true);
-        // Both Mythix panels are CCLayer/CCNodeRGBA objects. Use the RGBA
-        // interface for opacity instead of calling it on the base CCNode.
-        auto rgbaNode = typeinfo_cast<CCNodeRGBA*>(node);
-        if (!rgbaNode) return;
-        if (Mod::get()->getSettingValue<bool>(PANEL_FADE_SETTING)) {
-            rgbaNode->setCascadeOpacityEnabled(true);
-            rgbaNode->setOpacity(0);
-            rgbaNode->runAction(CCFadeTo::create(.24f, 255));
-        } else {
-            rgbaNode->setOpacity(255);
+        const bool fade = Mod::get()->getSettingValue<bool>(PANEL_FADE_SETTING);
+
+        // CCLayerColor implements CCRGBAProtocol directly; it is not a
+        // CCNodeRGBA. Fade the actual color layer and cascade to its contents.
+        if (auto colorLayer = typeinfo_cast<CCLayerColor*>(node)) {
+            fadeLayer(colorLayer, fade);
+            return;
+        }
+
+        // The global shortcut panel is a plain CCLayer containing color layers.
+        // Animate those visible layers rather than trying to fade the CCLayer.
+        auto children = node->getChildren();
+        if (!children) return;
+        for (unsigned int i = 0; i < children->count(); ++i) {
+            auto child = typeinfo_cast<CCLayerColor*>(children->objectAtIndex(i));
+            if (child) fadeLayer(child, fade);
         }
     }
 
