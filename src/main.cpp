@@ -317,10 +317,12 @@ class $modify(MythixPlayLayer, PlayLayer) {
         int next = (m_fields->selectedStartPos + direction) % (count + 1);
         if (next < 0) next += count + 1;
         m_fields->selectedStartPos = next;
-        m_currentCheckpoint = nullptr;
+        // Geode 6 / GD 2.2091 no longer exposes m_currentCheckpoint or
+        // setStartPosObject(). The selected start object remains available
+        // through PlayLayer's m_startPosObject field.
         m_isTestMode = next != 0;
         updateTestModeLabel();
-        setStartPosObject(next == 0 ? nullptr : m_fields->startPositions[next - 1]);
+        m_startPosObject = next == 0 ? nullptr : m_fields->startPositions[next - 1];
         if (m_isPracticeMode) resetLevelFromStart();
         resetLevel();
         startMusic();
