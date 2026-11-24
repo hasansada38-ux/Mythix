@@ -120,6 +120,8 @@ namespace {
     int m_tier = 0;
     CCLabelBMFont* m_faceLabel = nullptr;
     CCLabelBMFont* m_tierLabel = nullptr;
+    CCSprite* m_faceSprite = nullptr;
+    CCSprite* m_glowSprite = nullptr;
 public:
     static MythixFakeRatePopup* create(int levelID) {
         auto ret = new MythixFakeRatePopup();
@@ -167,21 +169,23 @@ public:
         panel->addChild(numbers, 2);
 
         m_faceLabel = CCLabelBMFont::create("", "bigFont.fnt");
-        if (m_faceLabel) { m_faceLabel->setScale(.58f); m_faceLabel->setPosition({220.f, 62.f}); panel->addChild(m_faceLabel); }
+        if (m_faceLabel) { m_faceLabel->setScale(.40f); m_faceLabel->setPosition({220.f, 62.f}); panel->addChild(m_faceLabel); }
         m_tierLabel = CCLabelBMFont::create("", "bigFont.fnt");
         if (m_tierLabel) { m_tierLabel->setScale(.40f); m_tierLabel->setPosition({220.f, 37.f}); panel->addChild(m_tierLabel); }
+        m_glowSprite = CCSprite::createWithSpriteFrameName("difficultySelected_001.png");
+        if (m_glowSprite) { m_glowSprite->setPosition({220.f, 115.f}); m_glowSprite->setScale(1.75f); m_glowSprite->setOpacity(190); panel->addChild(m_glowSprite, 1); }
+        auto faceFrame = CCSprite::createWithSpriteFrameName("difficulty_02_btn_001.png");
+        if (faceFrame) {
+            faceFrame->setScale(1.15f);
+            auto faceMenu = CCMenu::create(CCMenuItemSpriteExtra::create(faceFrame, this, menu_selector(MythixFakeRatePopup::onCycleTier)), nullptr);
+            if (faceMenu) { faceMenu->setPosition({0.f, 0.f}); auto item = static_cast<CCMenuItem*>(faceMenu->getChildren()->objectAtIndex(0)); item->setPosition({220.f, 115.f}); panel->addChild(faceMenu, 3); m_faceSprite = faceFrame; }
+        }
 
         auto actions = CCMenu::create();
         if (!actions) return false;
         actions->setPosition({0.f, 0.f});
-        auto cycleText = CCLabelBMFont::create("CYCLE TIER", "bigFont.fnt");
         auto cancelText = CCLabelBMFont::create("CANCEL", "bigFont.fnt");
         auto submitText = CCLabelBMFont::create("SUBMIT", "bigFont.fnt");
-        if (cycleText) {
-            cycleText->setScale(.42f);
-            auto cycle = CCMenuItemLabel::create(cycleText, this, menu_selector(MythixFakeRatePopup::onCycleTier));
-            if (cycle) { cycle->setPosition({220.f, 92.f}); actions->addChild(cycle); }
-        }
         if (cancelText) {
             cancelText->setScale(.48f);
             auto cancel = CCMenuItemLabel::create(cancelText, this, menu_selector(MythixFakeRatePopup::onCancel));
@@ -199,6 +203,11 @@ public:
 
     void refreshPreview() {
         if (m_faceLabel) m_faceLabel->setString(m_stars ? fmt::format("{}  ({} STAR{})", difficultyName(m_stars), m_stars, m_stars == 1 ? "" : "S").c_str() : "SELECT A STAR AMOUNT");
+        if (m_faceSprite) {
+            int diff = m_stars <= 1 ? 0 : m_stars == 2 ? 1 : m_stars == 3 ? 2 : m_stars <= 5 ? 3 : m_stars <= 7 ? 4 : m_stars <= 9 ? 5 : 6;
+            auto frame = CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(fmt::format("difficulty_{:02}_btn_001.png", diff).c_str());
+            if (frame) m_faceSprite->setDisplayFrame(frame);
+        }
         if (m_tierLabel) {
             m_tierLabel->setString(tierName(m_tier));
             static ccColor3B colors[] = {ccc3(255,255,255), ccc3(255,205,65), ccc3(190,105,255), ccc3(255,105,220), ccc3(85,225,255)};
