@@ -61,7 +61,8 @@ namespace {
     }
 
     char const* difficultyName(int stars) {
-        if (stars <= 2) return "EASY";
+        if (stars <= 1) return "AUTO";
+        if (stars == 2) return "EASY";
         if (stars == 3) return "NORMAL";
         if (stars <= 5) return "HARD";
         if (stars <= 7) return "HARDER";
@@ -212,6 +213,10 @@ public:
             m_tierLabel->setString(tierName(m_tier));
             static ccColor3B colors[] = {ccc3(255,255,255), ccc3(255,205,65), ccc3(190,105,255), ccc3(255,105,220), ccc3(85,225,255)};
             m_tierLabel->setColor(colors[std::clamp(m_tier, 0, 4)]);
+            if (m_glowSprite) {
+                m_glowSprite->setColor(colors[std::clamp(m_tier, 0, 4)]);
+                m_glowSprite->setOpacity(m_tier == 0 ? 0 : 220);
+            }
         }
     }
     void onChooseStars(CCObject* sender) {
