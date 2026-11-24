@@ -4,6 +4,7 @@
 #include <Geode/modify/GJBaseGameLayer.hpp>
 #include <Geode/modify/CCParticleSystemQuad.hpp>
 #include <Geode/modify/UILayer.hpp>
+#include <Geode/modify/LevelInfoLayer.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/binding/StartPosObject.hpp>
 #include <Geode/cocos/extensions/GUI/CCControlExtension/CCControlSlider.h>
@@ -11,6 +12,8 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <map>
+#include <sstream>
 
 using namespace geode::prelude;
 
@@ -22,6 +25,49 @@ namespace {
     constexpr char const* STARTPOS_NEXT_KEYBIND = "startpos-next-keybind";
     constexpr char const* PANEL_FADE_SETTING = "panel-fade-animation";
     constexpr char const* PANEL_ACCENT_HUE_SETTING = "panel-accent-hue";
+    constexpr char const* RATE_LEVELS_SETTING = "rate-levels";
+    constexpr char const* FAKE_RATINGS_SAVE_KEY = "fake-level-ratings";
+
+    struct FakeLevelRating { int stars = 0; int tier = 0; };
+
+    std::map<int, FakeLevelRating> loadFakeRatings() {
+        std::map<int, FakeLevelRating> ratings;
+        std::stringstream input(Mod::get()->getSavedValue<std::string>(FAKE_RATINGS_SAVE_KEY, ""));
+        std::string entry;
+        while (std::getline(input, entry, ';')) {
+            std::stringstream fields(entry);
+            std::string id, stars, tier;
+            if (std::getline(fields, id, ',') && std::getline(fields, stars, ',') && std::getline(fields, tier, ',')) {
+                try { ratings[std::stoi(id)] = {std::stoi(stars), std::stoi(tier)}; } catch (...) {}
+            }
+        }
+        return ratings;
+    }
+
+    void saveFakeRating(int levelID, FakeLevelRating rating) {
+        auto ratings = loadFakeRatings();
+        ratings[levelID] = rating;
+        std::string output;
+        for (auto const& [id, value] : ratings) {
+            if (!output.empty()) output += ';';
+            output += fmt::format("{},{},{}", id, value.stars, value.tier);
+        }
+        Mod::get()->setSavedValue<std::string>(FAKE_RATINGS_SAVE_KEY, output);
+    }
+
+    char const* tierName(int tier) {
+        static char const* names[] = {"STANDARD", "FEATURED", "EPIC", "LEGENDARY", "MYTHIC"};
+        return names[std::clamp(tier, 0, 4)];
+    }
+
+    char const* difficultyName(int stars) {
+        if (stars <= 2) return "EASY";
+        if (stars == 3) return "NORMAL";
+        if (stars <= 5) return "HARD";
+        if (stars <= 7) return "HARDER";
+        if (stars <= 9) return "INSANE";
+        return "DEMON";
+    }
 
     ccColor3B accentColor() {
         int hue = (Mod::get()->getSettingValue<int>(PANEL_ACCENT_HUE_SETTING) % 360 + 360) % 360;
@@ -68,7 +114,112 @@ namespace {
         }
     }
 
-    class BunnyIcon : public CCNode {
+    class MythixFakeRatePopup : public CCLayer {
+    int m_levelID = 0;
+    int m_stars = 0;
+    int m_tier = 0;
+    CCLabelBMFont* m_faceLabel = nullptr;
+    CCLabelBMFont* m_tierLabel = nullptr;
+public:
+    static MythixFakeRatePopup* create(int levelID) {
+        auto ret = new MythixFakeRatePopup();
+        if (ret && ret->initWithLevel(levelID)) { ret->autorelease(); return ret; }
+        CC_SAFE_DELETE(ret);
+        return nullptr;
+    }
+
+    bool initWithLevel(int levelID) {
+        if (!CCLayer::init()) return false;
+        m_levelID = levelID;
+        auto saved = loadFakeRatings();
+        if (saved.count(levelID)) { m_stars = saved[levelID].stars; m_tier = saved[levelID].tier; }
+
+        auto win = CCDirector::sharedDirector()->getWinSize();
+        auto shade = CCLayerColor::create(ccc4(0, 0, 0, 170), win.width, win.height);
+        if (shade) this->addChild(shade);
+
+        auto panel = CCLayerColor::create(ccc4(104, 55, 35, 255), 440.f, 300.f);
+        if (!panel) return false;
+        panel->setPosition({(win.width - 440.f) / 2.f, (win.height - 300.f) / 2.f});
+        this->addChild(panel, 1);
+
+        auto title = CCLabelBMFont::create("MYTHIX: SET FAKE RATING", "bigFont.fnt");
+        if (title) { title->setScale(.62f); title->setPosition({220.f, 265.f}); panel->addChild(title); }
+
+        auto starsTitle = CCLabelBMFont::create("SELECT STARS", "bigFont.fnt");
+        if (starsTitle) { starsTitle->setScale(.48f); starsTitle->setPosition({220.f, 225.f}); panel->addChild(starsTitle); }
+
+        auto numbers = CCMenu::create();
+        if (!numbers) return false;
+        numbers->setPosition({0.f, 0.f});
+        for (int i = 1; i <= 10; ++i) {
+            auto label = CCLabelBMFont::create(fmt::format("{}", i).c_str(), "bigFont.fnt");
+            if (!label) continue;
+            label->setScale(.52f);
+            auto item = CCMenuItemLabel::create(label, this, menu_selector(MythixFakeRatePopup::onChooseStars));
+            if (!item) continue;
+            item->setTag(i);
+            float x = 72.f + ((i - 1) % 5) * 74.f;
+            float y = 180.f - ((i - 1) / 5) * 55.f;
+            item->setPosition({x, y});
+            numbers->addChild(item);
+        }
+        panel->addChild(numbers, 2);
+
+        m_faceLabel = CCLabelBMFont::create("", "bigFont.fnt");
+        if (m_faceLabel) { m_faceLabel->setScale(.58f); m_faceLabel->setPosition({220.f, 62.f}); panel->addChild(m_faceLabel); }
+        m_tierLabel = CCLabelBMFont::create("", "bigFont.fnt");
+        if (m_tierLabel) { m_tierLabel->setScale(.40f); m_tierLabel->setPosition({220.f, 37.f}); panel->addChild(m_tierLabel); }
+
+        auto actions = CCMenu::create();
+        if (!actions) return false;
+        actions->setPosition({0.f, 0.f});
+        auto cycleText = CCLabelBMFont::create("CYCLE TIER", "bigFont.fnt");
+        auto cancelText = CCLabelBMFont::create("CANCEL", "bigFont.fnt");
+        auto submitText = CCLabelBMFont::create("SUBMIT", "bigFont.fnt");
+        if (cycleText) {
+            cycleText->setScale(.42f);
+            auto cycle = CCMenuItemLabel::create(cycleText, this, menu_selector(MythixFakeRatePopup::onCycleTier));
+            if (cycle) { cycle->setPosition({220.f, 92.f}); actions->addChild(cycle); }
+        }
+        if (cancelText) {
+            cancelText->setScale(.48f);
+            auto cancel = CCMenuItemLabel::create(cancelText, this, menu_selector(MythixFakeRatePopup::onCancel));
+            if (cancel) { cancel->setPosition({125.f, 15.f}); actions->addChild(cancel); }
+        }
+        if (submitText) {
+            submitText->setScale(.48f);
+            auto submit = CCMenuItemLabel::create(submitText, this, menu_selector(MythixFakeRatePopup::onSubmit));
+            if (submit) { submit->setPosition({315.f, 15.f}); actions->addChild(submit); }
+        }
+        panel->addChild(actions, 3);
+        refreshPreview();
+        return true;
+    }
+
+    void refreshPreview() {
+        if (m_faceLabel) m_faceLabel->setString(m_stars ? fmt::format("{}  ({} STAR{})", difficultyName(m_stars), m_stars, m_stars == 1 ? "" : "S").c_str() : "SELECT A STAR AMOUNT");
+        if (m_tierLabel) {
+            m_tierLabel->setString(tierName(m_tier));
+            static ccColor3B colors[] = {ccc3(255,255,255), ccc3(255,205,65), ccc3(190,105,255), ccc3(255,105,220), ccc3(85,225,255)};
+            m_tierLabel->setColor(colors[std::clamp(m_tier, 0, 4)]);
+        }
+    }
+    void onChooseStars(CCObject* sender) {
+        auto item = typeinfo_cast<CCMenuItem*>(sender);
+        if (!item) return;
+        m_stars = item->getTag();
+        refreshPreview();
+    }
+    void onCycleTier(CCObject*) { m_tier = (m_tier + 1) % 5; refreshPreview(); }
+    void onCancel(CCObject*) { this->removeFromParentAndCleanup(true); }
+    void onSubmit(CCObject*) {
+        if (m_stars > 0) saveFakeRating(m_levelID, {m_stars, m_tier});
+        this->removeFromParentAndCleanup(true);
+    }
+};
+
+class BunnyIcon : public CCNode {
     public:
         static BunnyIcon* create() {
             auto ret = new BunnyIcon();
@@ -562,3 +713,31 @@ $on_game(Loaded) {
         if(down && !repeat) if(auto p=PlayLayer::get()) static_cast<MythixPlayLayer*>(p)->switchStartPos(1);
     });
 }
+
+
+class $modify(MythixLevelInfoLayer, LevelInfoLayer) {
+    void setupLevelInfo() {
+        LevelInfoLayer::setupLevelInfo();
+        if (!Mod::get()->getSettingValue<bool>(RATE_LEVELS_SETTING) || !m_level) return;
+        if (this->getChildByID("mythix-fake-rate-button")) return;
+
+        auto label = CCLabelBMFont::create("★ RATE", "bigFont.fnt");
+        if (!label) return;
+        label->setScale(.42f);
+        label->setColor(ccc3(255, 220, 90));
+        auto item = CCMenuItemLabel::create(label, this, menu_selector(MythixLevelInfoLayer::onMythixFakeRate));
+        if (!item) return;
+        item->setID("mythix-fake-rate-button");
+        auto menu = CCMenu::create(item, nullptr);
+        if (!menu) return;
+        auto win = CCDirector::sharedDirector()->getWinSize();
+        menu->setPosition({win.width - 95.f, 75.f});
+        this->addChild(menu, 1000);
+    }
+
+    void onMythixFakeRate(CCObject*) {
+        if (!m_level) return;
+        auto popup = MythixFakeRatePopup::create(static_cast<int>(m_level->m_levelID));
+        if (popup) this->addChild(popup, 10000);
+    }
+};
