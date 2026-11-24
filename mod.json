@@ -65,6 +65,13 @@
             "min": 0,
             "max": 359,
             "category": "interface"
+        },
+        "rate-levels": {
+            "name": "Rate Levels",
+            "description": "Adds a local-only fake rating button to level info menus. Nothing is submitted to Geometry Dash.",
+            "type": "bool",
+            "default": false,
+            "category": "interface"
         }
     },
     "resources": {
